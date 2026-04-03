@@ -1,0 +1,51 @@
+Designator,Footprint,LCSC Part Number,JLCPCB Part Number,Quantity,Value,Description,Package,Unit Price (USD),Total Price (USD),Supplier,Datasheet Link
+U1,SOT-223,C6186,C6186,1,AMS1117-3.3,AMS1117-3.3 Voltage Regulator,SOT-223,0.10,0.10,LCSC,https://www.advanced-monolithic.com/pdf/noch/ams1117.pdf
+U2,QFN-28,C7520,C7520,1,CP2102N,CP2102N USB-to-UART Bridge,QFN-28,0.80,0.80,LCSC,https://www.silabs.com/documents/public/data-sheets/cp2102n-a01-datasheet.pdf
+U3,38-PIN_MODULE,C529143,C529143,1,ESP32-WROOM-32,ESP32-WROOM-32 BLE/WiFi Module,38-pin,8.50,8.50,LCSC,https://www.espressif.com/sites/default/files/documentation/esp32-wroom-32_datasheet_en.pdf
+U4,MSOP-10,C21992,C21992,1,ADS1115,16-bit I2C ADC,MSOP-10,1.20,1.20,LCSC,https://www.ti.com/lit/ds/symlink/ads1115.pdf
+U5,MSOP-10,C21992,C21992,1,ADS1115,16-bit I2C ADC,MSOP-10,1.20,1.20,LCSC,https://www.ti.com/lit/ds/symlink/ads1115.pdf
+R1,0603,C14663,C14663,1,10kΩ,10kΩ 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R2,0603,C14663,C14663,1,10kΩ,10kΩ 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R3,0603,C14663,C14663,1,10kΩ,10kΩ 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R4,0603,C14663,C14663,1,10kΩ,10kΩ 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R5,0603,C14663,C14663,1,10kΩ,10kΩ 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R6,0603,C14663,C14663,1,10kΩ,10kΩ 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R7,0603,C14663,C14663,1,1kΩ,1kΩ 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R8,0603,C14663,C14663,1,1kΩ,1kΩ 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R9,0603,C14663,C14663,1,1kΩ,1kΩ 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R10,0603,C14631,C14631,1,4.7kΩ,4.7kΩ 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R11,0603,C14631,C14631,1,4.7kΩ,4.7kΩ 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R12,0603,C14663,C14663,1,10kΩ,10kΩ 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R13,0603,C14663,C14663,1,10kΩ,10kΩ 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R14,0603,C25119,C25119,1,22Ω,22Ω 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+R15,0603,C25119,C25119,1,22Ω,22Ω 5% 1/10W Resistor,0603,0.01,0.01,LCSC,N/A
+C1,0603,C14663,C14663,1,100nF,100nF 10% X7R Capacitor,0603,0.01,0.01,LCSC,N/A
+C2,1206,C13585,C13585,1,10µF,10µF 20% Electrolytic,1206,0.05,0.05,LCSC,N/A
+C3,0603,C14663,C14663,1,100nF,100nF 10% X7R Capacitor,0603,0.01,0.01,LCSC,N/A
+C4,1206,C13585,C13585,1,10µF,10µF 20% Electrolytic,1206,0.05,0.05,LCSC,N/A
+C5,0603,C14663,C14663,1,100nF,100nF 10% X7R Capacitor,0603,0.01,0.01,LCSC,N/A
+C6,0603,C14663,C14663,1,100nF,100nF 10% X7R Capacitor,0603,0.01,0.01,LCSC,N/A
+C7,0603,C14663,C14663,1,100nF,100nF 10% X7R Capacitor,0603,0.01,0.01,LCSC,N/A
+C8,0603,C14663,C14663,1,100nF,100nF 10% X7R Capacitor,0603,0.01,0.01,LCSC,N/A
+C9,0603,C14663,C14663,1,100nF,100nF 10% X7R Capacitor,0603,0.01,0.01,LCSC,N/A
+C10,0603,C14663,C14663,1,100nF,100nF 10% X7R Capacitor (Optional),0603,0.01,0.01,LCSC,N/A
+C11,0603,C14663,C14663,1,100nF,100nF 10% X7R Capacitor (Optional),0603,0.01,0.01,LCSC,N/A
+LED1,0603,C2286,C2286,1,Red LED,Red LED 0603,0603,0.05,0.05,LCSC,N/A
+SW1,6X6MM,C318884,C318884,1,6x6mm Button,6×6mm SMD Tactile Button,6X6MM,0.10,0.10,LCSC,N/A
+SW2,6X6MM,C318884,C318884,1,6x6mm Button,6×6mm SMD Tactile Button,6X6MM,0.10,0.10,LCSC,N/A
+J1,USB-C-24PIN,C165948,C165948,1,USB-C Mid-Mount,USB-C Connector 24-pin Mid-Mount,USB-C SMD,0.35,0.35,LCSC,N/A
+J2,JST-PH2,C157436,C157436,1,JST-PH 2-pin,JST-PH 2-pin Connector (SMD),JST-PH 2PIN,0.10,0.10,LCSC,N/A
+J3,JST-PH2,C157436,C157436,1,JST-PH 2-pin,JST-PH 2-pin Connector (SMD),JST-PH 2PIN,0.10,0.10,LCSC,N/A
+J4,JST-PH2,C157436,C157436,1,JST-PH 2-pin,JST-PH 2-pin Connector (SMD),JST-PH 2PIN,0.10,0.10,LCSC,N/A
+J5,JST-PH2,C157436,C157436,1,JST-PH 2-pin,JST-PH 2-pin Connector (SMD),JST-PH 2PIN,0.10,0.10,LCSC,N/A
+J6,JST-PH2,C157436,C157436,1,JST-PH 2-pin,JST-PH 2-pin Connector (SMD),JST-PH 2PIN,0.10,0.10,LCSC,N/A
+J7,JST-PH2,C157436,C157436,1,JST-PH 2-pin,JST-PH 2-pin Connector (SMD),JST-PH 2PIN,0.10,0.10,LCSC,N/A
+J8,JST-PH2,C157436,C157436,1,JST-PH 2-pin,JST-PH 2-pin Connector (SMD) - NOT POPULATED,JST-PH 2PIN,0.10,0.00,LCSC,N/A
+Notes:,,,,,,,,,,,
+- ESP32-WROOM-32 part number may vary; check JLCPCB/LCSC for availability,,,,,,,,,,,
+- R7 value (1kΩ) can be adjusted based on desired LED brightness (1kΩ = ~3mA at 3.3V),,,,,,,,,,,
+- Button debounce capacitors (C10, C11) are optional; include if design requires hardware debouncing,,,,,,,,,,,
+- Prices shown are approximate single-unit costs; bulk pricing available,,,,,,,,,,,
+- Total estimated component cost: ~$15-20 per board (excluding PCB manufacturing),,,,,,,,,,,
+- USB-C connector alternative: GCT USB-C Mid-Mount (part C165948 on LCSC),,,,,,,,,,,
+- For JLCPCB PCBA service: Ensure all parts are in JLCPCB's extended library or basic library,,,,,,,,,,,
