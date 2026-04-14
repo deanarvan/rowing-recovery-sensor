@@ -222,7 +222,9 @@ For **each** of the 4 channels (A through D):
 
 ## Sensor Connectors (J2–J5)
 
-**4x JST-PH 2-pin SMD connectors** (same part as V1: LCSC C157436)
+**4x 2-pin 0.1" (2.54mm) pitch female through-hole headers**
+
+The FlexiForce A301 terminates in 2 male square pins at 0.1" pitch. These plug directly into standard 2-pin female headers on the PCB — no adapter cables, no soldering to the sensor, instant swap if a sensor needs replacement.
 
 | Connector | Sensor | Op-Amp Channel | ADS1115 Input |
 |---|---|---|---|
@@ -235,7 +237,7 @@ For **each** of the 4 channels (A through D):
 - Pin 1: Sensor signal → MCP6004 IN+ (non-inverting input)
 - Pin 2: GND
 
-The FlexiForce A301 has a 2-pin 0.1" pitch male connector that mates with standard headers. If JST-PH is preferred for mechanical retention, a simple adapter cable (0.1" female to JST-PH male) can be used. Alternatively, use **2-pin 0.1" pitch through-hole headers** instead of JST-PH for direct FlexiForce plug-in.
+**Part:** Standard 2-pin 2.54mm female header, through-hole (e.g., LCSC C35165 or any generic 1x2 female header). Place connectors along the board edge for easy cable routing to the balance board.
 
 ---
 
@@ -275,7 +277,7 @@ The FlexiForce A301 has a 2-pin 0.1" pitch male connector that mates with standa
 | U5 | ADS1115 @ 0x49 | Had A0/A1 routing defect; eliminated entirely |
 | R1–R6 | 10kΩ (×6) | Voltage dividers no longer needed |
 | C6–C9 | 100nF (×4) | ADS1115 decoupling no longer needed (keep 2 for U5) |
-| J6, J7 | JST-PH 2-pin (×2) | Only 4 sensor channels now (was 6) |
+| J2–J7 | JST-PH 2-pin (×6) | Replaced with 2.54mm female headers for direct FlexiForce plug-in |
 
 ### New in V2
 
@@ -297,10 +299,10 @@ The FlexiForce A301 has a 2-pin 0.1" pitch male connector that mates with standa
 | **Cpa** | **100nF** | **MCP6004 VDD decoupling** | **0603** | **C14663** | **1** |
 | **Cpb** | **10µF** | **MCP6004 VDD bulk cap** | **1206** | **C13585** | **1** |
 | **Ca5** | **100nF** | **ADS1115 VDD decoupling** | **0603** | **C14663** | **1** |
-| **J2** | **JST-PH 2-pin** | **Left Heel sensor connector** | **JST-PH** | **C157436** | **1** |
-| **J3** | **JST-PH 2-pin** | **Left Toe sensor connector** | **JST-PH** | **C157436** | **1** |
-| **J4** | **JST-PH 2-pin** | **Right Heel sensor connector** | **JST-PH** | **C157436** | **1** |
-| **J5** | **JST-PH 2-pin** | **Right Toe sensor connector** | **JST-PH** | **C157436** | **1** |
+| **J2** | **2-pin 2.54mm female header** | **Left Heel sensor (direct FlexiForce plug-in)** | **TH 2.54mm** | **C35165** | **1** |
+| **J3** | **2-pin 2.54mm female header** | **Left Toe sensor (direct FlexiForce plug-in)** | **TH 2.54mm** | **C35165** | **1** |
+| **J4** | **2-pin 2.54mm female header** | **Right Heel sensor (direct FlexiForce plug-in)** | **TH 2.54mm** | **C35165** | **1** |
+| **J5** | **2-pin 2.54mm female header** | **Right Toe sensor (direct FlexiForce plug-in)** | **TH 2.54mm** | **C35165** | **1** |
 
 ### V2 BOM Summary
 
