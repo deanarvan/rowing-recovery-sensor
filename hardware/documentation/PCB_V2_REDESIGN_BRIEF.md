@@ -63,7 +63,7 @@ Both modes use the same 4 sensor channels and the same BLE data format. The user
        │  ├─ ADDR → GND (sets address 0x48)
        │  └─ Shares I2C bus with IMU
        │
-       └─ BNO055 9-DOF IMU @ 0x28 (U6, breakout socket)
+       └─ BNO055 9-DOF IMU @ 0x28 (U6, on-board LGA-28 IC with 32.768 kHz crystal)
           ├─ Outputs: Euler angles, quaternion, linear acceleration
           ├─ ADR → GND (sets address 0x28)
           └─ Shares I2C bus with ADC
@@ -181,30 +181,40 @@ Single ADS1115 reads all 4 op-amp outputs over I2C.
 
 ### BNO055 9-DOF IMU (U6)
 
-The BNO055 provides absolute orientation with onboard sensor fusion (Euler angles, quaternion, linear acceleration, gravity vector) — no host-side filtering required.
+The BNO055 provides absolute orientation with onboard sensor fusion (Euler angles, quaternion, linear acceleration, gravity vector) — no host-side filtering required. The IC is placed **directly on the PCB** alongside its supporting crystal and decoupling components. JLCPCB's PCBA service handles the LGA-28 placement; no post-assembly work is required.
 
-**Integration approach:** socket a pre-assembled BNO055 breakout module onto the PCB via a 2×5 (10-pin) 2.54mm female header. This simplifies assembly and avoids the difficulty of hand-placing the LGA-28 package.
+#### BNO055 IC Pinout (LGA-28)
 
-Compatible breakout modules:
-- Adafruit BNO055 (product #2472) — 10-pin 0.1" header
-- CJMCU-055 breakout (AliExpress / Amazon) — identical pinout, budget option
-- DFRobot Sen0375
-
-**Alternative:** direct IC assembly (LGA-28 package + 32.768 kHz crystal + 22pF caps + 0.1µF decoupling) if PCBA service is available.
-
-#### Breakout Socket Wiring (U6)
-
-| Breakout Pin | Connect To | Notes |
+| Pin | Name | Connection |
 |---|---|---|
-| VIN / VDD | 3.3V | |
-| GND | Ground plane | |
-| SDA | I2C SDA (GPIO21) | Shared bus with ADS1115 |
-| SCL | I2C SCL (GPIO22) | Shared bus with ADS1115 |
-| INT | ESP32 GPIO4 | Optional motion interrupt (leave unconnected if unused) |
-| RST | ESP32 GPIO5 | Optional hardware reset; pull high via 10 kΩ to 3.3V if unconnected |
-| ADR | GND | Sets I2C address to 0x28 |
-| PS0 | GND | Standard I2C protocol mode |
-| PS1 | GND | Standard I2C protocol mode |
+| 1 | VDDIO | 3.3V (with 100nF decoupling cap to GND) |
+| 3 | GND | Ground plane |
+| 4 | XIN32 | Crystal pin 1 (with 22pF load cap to GND) |
+| 5 | XOUT32 | Crystal pin 2 (with 22pF load cap to GND) |
+| 6 | BL_IND | 10 kΩ pull-up to 3.3V |
+| 8 | PS1 | GND (standard I²C mode) |
+| 9 | PS0 | GND (standard I²C mode) |
+| 17 | COM3 (ADR) | GND (sets I²C address to 0x28) |
+| 18 | COM2 (INT) | ESP32 GPIO4 (optional motion interrupt; leave floating if unused) |
+| 19 | COM1 (SCL) | I²C SCL bus (GPIO22) |
+| 20 | COM0 (SDA) | I²C SDA bus (GPIO21) |
+| 23 | nRESET | Pull up to 3.3V via 10 kΩ; optional tie to ESP32 GPIO5 for hardware reset |
+| 28 | VDD | 3.3V (with 100nF decoupling cap to GND) |
+
+(All other pins: leave unconnected or tied to GND per datasheet recommendations.)
+
+#### Supporting Components
+
+| Ref | Value | Purpose |
+|---|---|---|
+| Y1 | 32.768 kHz quartz crystal, 12.5 pF load | External timing reference — required for accurate sensor fusion |
+| Cxtal1, Cxtal2 | 22 pF NP0 | Crystal load capacitors (tie to GND, placed within 3mm of crystal) |
+| Cbno_io | 100 nF | VDDIO decoupling (placed within 2mm of pin 1) |
+| Cbno_d | 100 nF | VDD decoupling (placed within 2mm of pin 28) |
+| Rbl | 10 kΩ | BL_IND pull-up to 3.3V |
+| Rrst | 10 kΩ | nRESET pull-up to 3.3V |
+
+Crystal routing: keep traces short and symmetric, surround with ground pour, do not route high-speed signals underneath.
 
 ### I2C Bus
 
@@ -219,13 +229,13 @@ Bus pull-ups: 4.7 kΩ to 3.3V on both SDA and SCL. 400 kHz fast mode.
 
 ### IMU Axis Alignment
 
-Place the BNO055 socket on the PCB such that the module's printed axes align with the board's physical frame of reference:
+Orient the BNO055 IC on the PCB so that its internal axes align with the board's physical frame of reference:
 
 - **IMU X+** → board length direction (anterior, toward the toe-end of the sensor layout)
 - **IMU Y+** → board width direction (medial-lateral)
-- **IMU Z+** → up (perpendicular to board surface)
+- **IMU Z+** → up (perpendicular to PCB surface)
 
-With this alignment, pitch rotates around Y, roll rotates around X, yaw rotates around Z.
+With this alignment, pitch rotates around Y, roll rotates around X, yaw rotates around Z. Document the chosen orientation on the silkscreen with a small arrow so the operator can verify placement.
 
 ### ESP32-WROOM-32 (U3)
 
@@ -300,7 +310,14 @@ All on-board components. Off-board parts (BNO055 breakout, FlexiForce sensors) a
 | U3 | ESP32-WROOM-32 | BLE/WiFi MCU module | 38-pin module | C529143 | 1 |
 | U4 | MCP6004-I/ST | Quad rail-to-rail op-amp | SOIC-14 | C7378 | 1 |
 | U5 | ADS1115 | 16-bit I²C ADC | MSOP-10 | C21992 | 1 |
-| U6 socket | 2×5 female header, 2.54mm | BNO055 breakout socket | TH 2.54mm | C124378 | 1 |
+| U6 | BNO055 | 9-DOF absolute orientation sensor with onboard fusion | LGA-28 (5.2×3.8mm) | C40521 | 1 |
+| Y1 | 32.768 kHz crystal, 12.5 pF load | BNO055 external timing crystal | SMD 3.2×1.5mm | C32346 | 1 |
+| Cxtal1 | 22 pF NP0 | Crystal load cap | 0402 | C1554 | 1 |
+| Cxtal2 | 22 pF NP0 | Crystal load cap | 0402 | C1554 | 1 |
+| Cbno_io | 100 nF | BNO055 VDDIO decoupling | 0402 | C1525 | 1 |
+| Cbno_d | 100 nF | BNO055 VDD decoupling | 0402 | C1525 | 1 |
+| Rbl | 10 kΩ | BNO055 BL_IND pull-up | 0402 | C25744 | 1 |
+| Rrst | 10 kΩ | BNO055 nRESET pull-up | 0402 | C25744 | 1 |
 | Rf1–Rf4 | 10 kΩ 1% | Op-amp feedback resistors | 0603 | C25804 | 4 |
 | Rd1–Rd4 | 10 kΩ 1% | Op-amp drive resistors | 0603 | C25804 | 4 |
 | Rvd1 | 47 kΩ 1% | Vref divider (top) | 0603 | C25819 | 1 |
@@ -311,7 +328,6 @@ All on-board components. Off-board parts (BNO055 breakout, FlexiForce sensors) a
 | R13 | 10 kΩ | EN (RESET) pull-up | 0603 | C14663 | 1 |
 | R14 | 22 Ω | USB D+ series resistor | 0603 | C25119 | 1 |
 | R15 | 22 Ω | USB D- series resistor | 0603 | C25119 | 1 |
-| R16 | 10 kΩ | BNO055 RST pull-up | 0603 | C25804 | 1 |
 | R_LED | 1 kΩ | Power LED current limit | 0603 | C14663 | 1 |
 | R_UART1 | 1 kΩ | CP2102 TX series | 0603 | C14663 | 1 |
 | R_UART2 | 1 kΩ | CP2102 RX series | 0603 | C14663 | 1 |
@@ -339,7 +355,8 @@ Estimated per-board cost: ~$15 in components plus ~$2–5 PCB fabrication (JLCPC
 | Part | Source | Purpose |
 |---|---|---|
 | Tekscan FlexiForce A301-100 (×4 or ×6 with spares) | DigiKey / Tekscan | Force sensors; plug into J2–J5 |
-| Adafruit BNO055 breakout (#2472) or CJMCU-055 equivalent | Adafruit / Amazon / AliExpress | 9-DOF IMU; sockets into U6 position |
+
+The IMU is now integrated directly on the PCB — no separate module to purchase or socket.
 
 ---
 
@@ -363,8 +380,8 @@ Estimated per-board cost: ~$15 in components plus ~$2–5 PCB fabrication (JLCPC
 │         [ESP32-WROOM-32]               │  ← Center; keep antenna clear
 │         (large module)                 │
 │                                        │
-│  [MCP6004]  [ADS1115]    [BNO055      │  ← Analog + IMU section
-│  [Rf1-4]    [Rd1-4]       socket U6]  │
+│  [MCP6004]  [ADS1115]    [BNO055]     │  ← Analog + IMU section
+│  [Rf1-4]    [Rd1-4]      [Y1 xtal]    │     IMU IC directly on board
 │  [Rvd1/2]   [Cvref]                   │
 │                                        │
 │  [J2]  [J3]  [J4]  [J5]              │  ← Sensor connectors (bottom edge)
@@ -383,9 +400,9 @@ Estimated per-board cost: ~$15 in components plus ~$2–5 PCB fabrication (JLCPC
 
 No copper (traces or ground plane) within 10mm of the ESP32 antenna end. The module should be oriented so the antenna overhangs the board edge or has a dedicated clear zone.
 
-### IMU Orientation
+### IMU Placement
 
-Place the BNO055 socket so that, when a module is plugged in, its printed X-axis arrow points toward the heel/back edge of the board (or toward the front edge of the sensor layout — chosen for consistency across units). Document the chosen convention in the layout notes so firmware and the web app interpret axes correctly.
+Place the BNO055 IC (U6) and its 32.768 kHz crystal (Y1) together in a small quiet zone, away from the ESP32 module and high-speed digital traces. Surround the crystal with a local ground pour. Add a silkscreen arrow next to U6 indicating the chosen X-axis direction so firmware and the web app can interpret axes correctly. The 22 pF load caps (Cxtal1, Cxtal2) must be within 3 mm of the crystal pins.
 
 ---
 
@@ -423,7 +440,8 @@ Run once per assembled board to establish per-channel force calibration:
 - [ ] Channels respond smoothly when a test voltage is applied
 
 ### IMU Verification
-- [ ] BNO055 breakout seats fully in socket
+- [ ] I²C scanner finds BNO055 at address 0x28
+- [ ] Crystal oscillates (firmware reports successful IMU init)
 - [ ] Board flat on bench: pitch ≈ 0°, roll ≈ 0°
 - [ ] Tilt board 45° forward: pitch reads ~45°
 - [ ] Tilt board 45° sideways: roll reads ~45°
