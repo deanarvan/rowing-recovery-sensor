@@ -44,7 +44,7 @@ Both modes use the same 4 sensor channels and the same BLE data format. The user
        ├─ CP2102N USB-to-UART Bridge (U2)
        │  (TX → ESP32 GPIO1, RX ← ESP32 GPIO3)
        │
-       ├─ AMS1117-3.3 LDO (U1) ── 3.3V rail
+       ├─ AP2112K-3.3 LDO (U1) ── 3.3V rail
        │
        ├─ ESP32-WROOM-32 (U3)
        │  ├─ I2C SDA = GPIO21, SCL = GPIO22
@@ -77,21 +77,27 @@ Both modes use the same 4 sensor channels and the same BLE data format. The user
 
 The FlexiForce A301 is a 2-terminal resistive force sensor. Its resistance decreases as applied force increases. An **inverting op-amp circuit** converts this variable resistance to a proportional output voltage with good linearity across the full force range.
 
+The topology follows the **Tekscan FlexiForce Integration Guide, Figure 4** ("Inverting Amplifier" reference circuit). Per channel:
+
 ```
-                       Rf (feedback resistor)
-                    ┌──────────────────────────┐
-                    │                          │
-                    │      ┌──────────┐        │
- Vref ─── Rd ──────┤(-)   │  1/4 of  │  (out) ├───── ADS1115 input (A0-A3)
-  │                │      │  MCP6004 │        │
-  │   FlexiForce   │(+)   │          │        │
-  │   ┌────────┐   │      └──────────┘        │
-  └───┤ sensor ├───┘                           │
-      └────────┘   │                           │
-                   GND                         │
-                                          Cf (optional)
-                                         100pF
+  ┌─────────── Rf (10 kΩ) ──────────┐
+  │                                 │
+  │        ┌───────────────┐        │
+Vref ──────┤(–)             ├───────┴──────┬──── Vout → ADS1115 input (A0–A3)
+           │   MCP6004      │              │
+    ┌──────┤(+)  (1 of 4)   │              Cf (100 pF, optional)
+    │      └───────────────┘               │
+   Vref/2 reference                        GND
+    │
+  (mid-rail bias divider)
+
+  FlexiForce sensor — wired between Vref (drive node) and the (–) input,
+  replacing the standard input resistor Rin in the inverting configuration.
 ```
+
+**Operating principle:** the FlexiForce sits in the position of the inverting-amplifier input resistor. As applied force increases, Rsensor decreases, input current into the summing junction rises, and Vout moves proportionally. The feedback resistor Rf sets the gain (force range). The (+) input is biased to mid-rail (Vref/2) to keep the single-supply op-amp output in the linear region.
+
+Full schematic with exact polarity and biasing: see Tekscan Integration Guide (linked in the Reference Datasheets section). Standard values given below are calibrated for this application.
 
 The op-amp output follows the relation **Vout = Vref × (Rf / Rsensor)**. As force increases, Rsensor decreases, and Vout increases linearly — from ~0V (no force) to ~3V (full range).
 
@@ -223,7 +229,7 @@ Both devices share one I2C bus driven by the ESP32 on GPIO21 (SDA) and GPIO22 (S
 | Device | Address | Package |
 |---|---|---|
 | ADS1115 | 0x48 | MSOP-10 on-board |
-| BNO055 | 0x28 | Off-board breakout via socket |
+| BNO055 | 0x28 | LGA-28 on-board |
 
 Bus pull-ups: 4.7 kΩ to 3.3V on both SDA and SCL. 400 kHz fast mode.
 
@@ -271,7 +277,7 @@ Standard USB programming interface.
 | Net | Voltage | Source | Notes |
 |---|---|---|---|
 | 5V_USB | 5.0V | USB-C connector | Max 500 mA per USB spec |
-| 3V3 | 3.3V | AMS1117-3.3 LDO | 1A capacity; typical draw <200 mA |
+| 3V3 | 3.3V | AP2112K-3.3 LDO | 600 mA capacity; 55 µA quiescent; typical draw <200 mA |
 | GND | 0V | Continuous ground plane | |
 
 Decoupling: 100nF + 10µF on LDO input and output. 100nF per IC VDD pin placed within 5mm.
@@ -292,20 +298,31 @@ The FlexiForce A301 terminates in 2 male square pins at 0.1" pitch. These plug d
 | J5 | Right Toe FlexiForce | MCP6004 Ch D | A3 |
 
 **Each connector:**
-- Pin 1: Sensor signal → MCP6004 IN+ (non-inverting input)
+- Pin 1: Sensor signal → 100 Ω series resistor → TVS clamp → MCP6004 IN+ (non-inverting input)
 - Pin 2: GND
 
 **Part:** 2-pin 2.54mm female header, through-hole (LCSC C35165 or equivalent). Place J2–J5 along one board edge for clean cable routing.
+
+### ESD Protection (per sensor input)
+
+Since FlexiForce sensors will be plugged and unplugged repeatedly during clinical use, each sensor input gets basic ESD/transient protection between the connector and the op-amp input:
+
+| Component | Value | Purpose | Placement |
+|---|---|---|---|
+| Resd (×4) | 100 Ω | Series current-limit resistor on signal pin | Between J2–J5 pin 1 and TVS clamp |
+| D_esd (×4) | PESD3V3L1BA | Unidirectional TVS diode, 3.3V working voltage, SOD-523 package | Between signal (after Resd) and GND, cathode to signal |
+
+This adds negligible noise (100 Ω against the op-amp's MΩ-range input impedance is invisible) but clamps any static discharge or cable swap transient before it reaches the op-amp.
 
 ---
 
 ## Bill of Materials
 
-All on-board components. Off-board parts (BNO055 breakout, FlexiForce sensors) are listed in a separate section below.
+All components mount directly on the PCB. The only off-board items are the FlexiForce sensors themselves, which plug into the four front-edge headers.
 
 | Designator | Value / Part | Description | Package | LCSC | Qty |
 |---|---|---|---|---|---|
-| U1 | AMS1117-3.3 | 3.3V LDO regulator | SOT-223 | C6186 | 1 |
+| U1 | AP2112K-3.3TRG1 | 3.3V LDO regulator, 55 µA Iq, low dropout | SOT-25 | C51118 | 1 |
 | U2 | CP2102N | USB-to-UART bridge | QFN-28 | C7520 | 1 |
 | U3 | ESP32-WROOM-32 | BLE/WiFi MCU module | 38-pin module | C529143 | 1 |
 | U4 | MCP6004-I/ST | Quad rail-to-rail op-amp | SOIC-14 | C7378 | 1 |
@@ -347,6 +364,8 @@ All on-board components. Off-board parts (BNO055 breakout, FlexiForce sensors) a
 | SW2 | 6×6mm tactile button | RESET | SMD 6×6mm | C318884 | 1 |
 | J1 | USB-C receptacle, 24-pin | USB connector (mid-mount) | USB-C SMD | C165948 | 1 |
 | J2–J5 | 2-pin female header, 2.54mm | Sensor connectors | TH 2.54mm | C35165 | 4 |
+| Resd1–Resd4 | 100 Ω | Sensor input series resistor (ESD current limit) | 0402 | C25092 | 4 |
+| Desd1–Desd4 | PESD3V3L1BA | Unidirectional TVS diode, 3.3V clamping | SOD-523 | C129319 | 4 |
 
 Estimated per-board cost: ~$15 in components plus ~$2–5 PCB fabrication (JLCPCB 5-piece minimum).
 
@@ -356,7 +375,7 @@ Estimated per-board cost: ~$15 in components plus ~$2–5 PCB fabrication (JLCPC
 |---|---|---|
 | Tekscan FlexiForce A301-100 (×4 or ×6 with spares) | DigiKey / Tekscan | Force sensors; plug into J2–J5 |
 
-The IMU is now integrated directly on the PCB — no separate module to purchase or socket.
+The IMU is integrated directly on the PCB — no separate module to purchase.
 
 ---
 
@@ -475,10 +494,11 @@ Run once per assembled board to establish per-channel force calibration:
 | MCP6004 | https://ww1.microchip.com/downloads/en/DeviceDoc/MCP6001-1R-1U-2-4-1MHz-Low-Power-Op-Amp-DS20001733L.pdf |
 | ADS1115 | https://www.ti.com/lit/ds/symlink/ads1115.pdf |
 | BNO055 | https://cdn-shop.adafruit.com/datasheets/BST_BNO055_DS000_12.pdf |
-| Adafruit BNO055 breakout | https://www.adafruit.com/product/2472 |
+| Adafruit BNO055 reference design (for layout hints) | https://www.adafruit.com/product/2472 |
 | ESP32-WROOM-32 | https://www.espressif.com/sites/default/files/documentation/esp32-wroom-32_datasheet_en.pdf |
 | CP2102N | https://www.silabs.com/documents/public/data-sheets/cp2102n-a01-datasheet.pdf |
-| AMS1117-3.3 | https://www.advanced-monolithic.com/pdf/noch/ams1117.pdf |
+| AP2112K-3.3 | https://www.diodes.com/assets/Datasheets/AP2112.pdf |
+| PESD3V3L1BA (TVS) | https://www.nexperia.com/products/esd-protection-and-emi-filtering/esd-protection-diodes/PESD3V3L1BA.html |
 
 ---
 
