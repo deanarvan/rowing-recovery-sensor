@@ -10,7 +10,9 @@
 
 ## Executive Summary
 
-V1 used FSR-402 sensors that saturate at ~100N — patient needs 1,500N+ for clinical testing. V2 switches to Tekscan FlexiForce A301 thin-film sensors (0.2mm thick, range up to 4,448N) with an active op-amp conditioning circuit. This replaces the 6x passive voltage dividers and one of the two ADS1115 ADCs. Everything else (ESP32, USB-C, power supply, BLE) is unchanged.
+V1 used FSR-402 sensors that saturate at ~100N — patient needs 1,500N+ for clinical testing. V2 switches to Tekscan FlexiForce A301-100-8 thin-film sensors (0.2mm thick, range up to 4,448N) with an active op-amp conditioning circuit. V2 also adds a BNO055 9-DOF IMU for board tilt and trunk angle measurement during balance assessments. This replaces the 6x passive voltage dividers and one of the two ADS1115 ADCs. Everything else (ESP32, USB-C, power supply, BLE) is unchanged.
+
+**Dual-use support:** The same V2 PCB supports both **Rowing mode** (FlexiForce sensors in shoe insoles) and **Balance Board mode** (FlexiForce sensors on board surface). Sensor sets are swapped via the 4 front-panel headers.
 
 ### What Changes
 
@@ -18,10 +20,11 @@ V1 used FSR-402 sensors that saturate at ~100N — patient needs 1,500N+ for cli
 |---|---|
 | 2x ADS1115 ADCs | **1x ADS1115 ADC** (single chip, all 4 channels) |
 | 6x 10kΩ voltage dividers | **4x inverting op-amp circuits** (1x MCP6004 quad) |
-| 6x JST-PH 2-pin connectors | **4x JST-PH 2-pin connectors** (heel+toe per foot) |
-| FSR-402 sensors (100N max) | FlexiForce A301 sensors (4,448N max) |
+| 6x JST-PH 2-pin connectors | **4x 2.54mm female headers** (direct FlexiForce plug-in) |
+| FSR-402 sensors (100N max) | **FlexiForce A301-100-8 sensors** (4,448N max) |
 | 6 sensor channels | **4 sensor channels** (no ball-of-foot) |
 | Right ADS1115 A0/A1 shorted | **Defect eliminated** (only 1 ADS1115, all 4 channels used) |
+| No IMU | **BNO055 9-DOF IMU** added for tilt/orientation |
 
 ### What Stays the Same
 
@@ -60,13 +63,22 @@ V1 used FSR-402 sensors that saturate at ~100N — patient needs 1,500N+ for cli
        │  ├─ Ch C (pin 8) ← Right Heel FlexiForce → ADS1115 A2
        │  └─ Ch D (pin 14)← Right Toe FlexiForce  → ADS1115 A3
        │
-       └─ ADS1115 @ 0x48 (U5) ← ONE chip only
-          ├─ A0 ← Op-amp Ch A output (Left Heel)
-          ├─ A1 ← Op-amp Ch B output (Left Toe)
-          ├─ A2 ← Op-amp Ch C output (Right Heel)
-          ├─ A3 ← Op-amp Ch D output (Right Toe)
-          ├─ ADDR → GND (address 0x48)
-          └─ I2C bus (SDA/SCL)
+       ├─ ADS1115 @ 0x48 (U5) ← ONE chip only
+       │  ├─ A0 ← Op-amp Ch A output (Left Heel)
+       │  ├─ A1 ← Op-amp Ch B output (Left Toe)
+       │  ├─ A2 ← Op-amp Ch C output (Right Heel)
+       │  ├─ A3 ← Op-amp Ch D output (Right Toe)
+       │  ├─ ADDR → GND (address 0x48)
+       │  └─ I2C bus (SDA/SCL)
+       │
+       └─ BNO055 9-DOF IMU @ 0x28 (U6) ← NEW
+          ├─ SDA → I2C bus (shared with ADS1115)
+          ├─ SCL → I2C bus (shared with ADS1115)
+          ├─ INT → ESP32 GPIO4 (optional motion interrupt)
+          ├─ ADR → GND (address 0x28)
+          ├─ PS0 → GND (I2C mode)
+          ├─ PS1 → GND (I2C mode)
+          └─ Outputs: Euler angles, quaternion, linear accel, gravity
 ```
 
 ---
@@ -220,6 +232,121 @@ For **each** of the 4 channels (A through D):
 
 ---
 
+## IMU — BNO055 9-DOF Orientation Sensor (U6) [NEW]
+
+### Purpose
+
+The BNO055 adds absolute orientation sensing to the board. Use cases:
+
+1. **Board tilt angle** — when mounted on a wobble/rocker/BOSU-style surface, measures real-time pitch and roll of the board (frame of reference for CoP data)
+2. **Trunk sway** — when routed via external cable to a chest/waist strap, measures postural lean during balance assessment
+3. **Dynamic reference frame** — correlates CoP shifts with actual postural strategy (ankle-dominant vs hip-dominant balance)
+4. **Tilt-controlled games** — the web app can drive balance training games using live tilt data
+
+### Integration Approach
+
+**Recommended:** socket a pre-assembled BNO055 breakout module onto the V2 PCB via a 2x5 (10-pin) female header. This avoids the difficulty of hand-placing the LGA-28 package and simplifies freelancer assembly.
+
+Compatible breakout modules (any of these):
+- Adafruit BNO055 Absolute Orientation Sensor (product #2472) — 10-pin 0.1" header, widely available
+- CJMCU-055 breakout (AliExpress / Amazon) — same pinout, ~$6
+- DFRobot BNO055 Sen0375
+
+**Alternative (if the freelancer prefers direct IC assembly):** Use the BNO055 LGA-28 with external 32.768 kHz crystal, 22pF load caps, and 0.1µF decoupling on each supply pin. JLCPCB can SMT-assemble this if the board is ordered with PCBA service.
+
+### Wiring (U6 — BNO055 breakout socket)
+
+| Breakout Pin | Connect To | Notes |
+|---|---|---|
+| VIN / VDD | 3.3V | Powered from LDO output |
+| 3V3 (if present) | Not connected | Some breakouts have this output — leave floating |
+| GND | Ground plane | — |
+| SDA | I2C SDA bus (GPIO21) | Shared with ADS1115, existing 4.7kΩ pull-up sufficient |
+| SCL | I2C SCL bus (GPIO22) | Shared with ADS1115, existing 4.7kΩ pull-up sufficient |
+| INT | ESP32 GPIO4 | Optional motion interrupt (not required, leave unconnected if unused) |
+| RST | ESP32 GPIO5 | Optional hardware reset (pull high via 10kΩ to 3.3V if unconnected) |
+| ADR | GND | Sets I2C address to 0x28 |
+| PS0 | GND | Standard I2C protocol mode |
+| PS1 | GND | Standard I2C protocol mode |
+
+### I2C Bus Configuration
+
+Both devices share one I2C bus:
+
+| Device | I2C Address | Purpose |
+|---|---|---|
+| ADS1115 (U5) | 0x48 | Force sensor ADC |
+| BNO055 (U6) | 0x28 | 9-DOF IMU |
+
+Existing 4.7kΩ pull-ups on SDA/SCL are sufficient for both devices at 400 kHz.
+
+### Placement
+
+Place the BNO055 socket on the V2 PCB such that the IMU's internal axes align with the board's physical axes:
+- **X-axis** → board length (rowing direction / anterior-posterior)
+- **Y-axis** → board width (medial-lateral)
+- **Z-axis** → up (perpendicular to board surface)
+
+If the IMU is rotated relative to this convention, the firmware can apply a rotation matrix, but physical alignment simplifies the data interpretation.
+
+### Firmware Integration
+
+Use the Adafruit BNO055 library (`Adafruit_BNO055`). Initialize in `setup()`:
+
+```cpp
+#include <Adafruit_BNO055.h>
+#include <utility/imumaths.h>
+
+Adafruit_BNO055 imu = Adafruit_BNO055(55, 0x28, &Wire);
+
+void setup() {
+  // ... existing I2C and ADS1115 setup ...
+  if (!imu.begin()) {
+    Serial.println("BNO055 not found — continuing without IMU");
+  } else {
+    imu.setExtCrystalUse(true);
+  }
+}
+
+void loop() {
+  if (deviceConnected) {
+    // ... existing ADC reads ...
+
+    // Read IMU Euler angles (degrees)
+    sensors_event_t euler;
+    imu.getEvent(&euler, Adafruit_BNO055::VECTOR_EULER);
+    // euler.orientation.x = heading (yaw), 0-360°
+    // euler.orientation.y = roll, -180 to +180°
+    // euler.orientation.z = pitch, -90 to +90°
+
+    // Extend BLE payload with IMU data (see below)
+  }
+}
+```
+
+### BLE Payload Extension
+
+V1 payload: 12 bytes (6x uint16 force values).
+V2 payload: **18 bytes** — adds 3x int16 for pitch, roll, yaw in 0.01° units (range ±327.67°).
+
+```cpp
+struct __attribute__((packed)) SensorDataV2 {
+  uint16_t left_heel;
+  uint16_t left_ball;   // 0 (not connected)
+  uint16_t left_toe;
+  uint16_t right_heel;
+  uint16_t right_ball;  // 0 (not connected)
+  uint16_t right_toe;
+  int16_t pitch_cdeg;   // 0.01° units
+  int16_t roll_cdeg;    // 0.01° units
+  int16_t yaw_cdeg;     // 0.01° units
+};  // 18 bytes
+```
+
+The web app (`useForceData.js`) parses the extra bytes; old 12-byte parsers remain backward-compatible by ignoring the trailing 6 bytes.
+
+---
+
 ## Sensor Connectors (J2–J5)
 
 **4x 2-pin 0.1" (2.54mm) pitch female through-hole headers**
@@ -303,14 +430,25 @@ The FlexiForce A301 terminates in 2 male square pins at 0.1" pitch. These plug d
 | **J3** | **2-pin 2.54mm female header** | **Left Toe sensor (direct FlexiForce plug-in)** | **TH 2.54mm** | **C35165** | **1** |
 | **J4** | **2-pin 2.54mm female header** | **Right Heel sensor (direct FlexiForce plug-in)** | **TH 2.54mm** | **C35165** | **1** |
 | **J5** | **2-pin 2.54mm female header** | **Right Toe sensor (direct FlexiForce plug-in)** | **TH 2.54mm** | **C35165** | **1** |
+| **U6 (socket)** | **2x5 female header, 2.54mm** | **BNO055 breakout module socket** | **TH 2.54mm** | **C124378** | **1** |
+| **R16** | **10kΩ** | **BNO055 RST pull-up to 3.3V (optional)** | **0603** | **C25804** | **1** |
+
+### Off-Board Parts (purchased separately, plug into V2 PCB)
+
+| Part | Qty | Description | Source |
+|---|---|---|---|
+| Adafruit BNO055 breakout (or CJMCU equivalent) | 1 | Pre-assembled 9-DOF IMU on breakout module | Adafruit / Amazon / AliExpress (~$15-35) |
+| FlexiForce A301-100-8 | 4-6 | Thin-film force sensors | DigiKey / Tekscan |
 
 ### V2 BOM Summary
 
 | Category | Component Count | Est. Cost |
 |---|---|---|
 | Retained from V1 | 21 components | ~$11 |
-| New analog front-end | 18 components | ~$4 |
-| **Total** | **39 components** | **~$15/board** |
+| New analog front-end (MCP6004 + passives + headers) | 18 components | ~$4 |
+| IMU socket + pull-up | 2 components | ~$0.60 |
+| **Total on-board** | **41 components** | **~$15-16/board** |
+| Off-board: BNO055 breakout module | 1 unit | ~$15-35 |
 
 PCB fabrication (5 boards, JLCPCB): ~$2–5 each
 
@@ -330,19 +468,24 @@ PCB fabrication (5 boards, JLCPCB): ~$2–5 each
 
 ```
 50mm × 70mm Board (Top View)
-┌──────────────────────────────────────┐
-│  [USB-C]  [CP2102N]  [LED] [SW1][SW2]│  ← Digital section (top edge)
-│                                      │
-│         [ESP32-WROOM-32]             │  ← Center (keep BLE antenna
-│         (large module)               │     clear of ground plane)
-│                                      │
-│  [MCP6004]  [ADS1115]               │  ← Analog section (bottom half)
-│  [Rf1-4]    [Rd1-4]                 │
-│  [Rvd1/2]   [Cvref]                 │
-│                                      │
-│  [J2]  [J3]  [J4]  [J5]            │  ← Sensor connectors (bottom edge)
-└──────────────────────────────────────┘
+┌────────────────────────────────────────┐
+│  [USB-C]  [CP2102N]  [LED] [SW1][SW2] │  ← Digital section (top edge)
+│                                        │
+│         [ESP32-WROOM-32]               │  ← Center (keep BLE antenna
+│         (large module)                 │     clear of ground plane)
+│                                        │
+│  [MCP6004]  [ADS1115]    [BNO055      │  ← Analog section
+│  [Rf1-4]    [Rd1-4]       socket U6]  │     IMU socket on right side
+│  [Rvd1/2]   [Cvref]                   │     so axes align with board
+│                                        │
+│  [J2]  [J3]  [J4]  [J5]              │  ← Sensor connectors (bottom edge)
+└────────────────────────────────────────┘
 ```
+
+**IMU axis alignment:** orient the BNO055 socket so that the breakout module's printed X-axis arrow points toward the **front** of the board (toward the toes side of the sensor layout). This gives:
+- IMU X+ = anterior/forward (pitch rotation axis)
+- IMU Y+ = medial-lateral (roll rotation axis)
+- IMU Z+ = up (yaw rotation axis)
 
 ### ESP32 Antenna Keep-Out
 
@@ -352,31 +495,57 @@ Same as V1: no copper (traces or ground plane) within 10mm of the ESP32 antenna 
 
 ## Firmware Notes (V2)
 
-The BLE data struct, service UUID, and characteristic UUID are **unchanged**. The web app requires no modifications.
+The service UUID and characteristic UUID are **unchanged**. The BLE payload is extended from 12 to 18 bytes (old clients ignore trailing bytes; new clients parse IMU data).
 
 ### Key Firmware Changes
 
 ```cpp
-// V2: Only ONE ADS1115 at 0x48, reading 4 op-amp outputs
+// V2: ONE ADS1115 at 0x48, ONE BNO055 at 0x28
 Adafruit_ADS1115 ads;
+Adafruit_BNO055 imu = Adafruit_BNO055(55, 0x28, &Wire);
+
+struct __attribute__((packed)) SensorDataV2 {
+  uint16_t left_heel;
+  uint16_t left_ball;   // 0 in 4-sensor config
+  uint16_t left_toe;
+  uint16_t right_heel;
+  uint16_t right_ball;  // 0 in 4-sensor config
+  uint16_t right_toe;
+  int16_t pitch_cdeg;   // 0.01° units
+  int16_t roll_cdeg;    // 0.01° units
+  int16_t yaw_cdeg;     // 0.01° units
+};  // 18 bytes
 
 void setup() {
   Wire.begin(21, 22);  // I2C SDA=GPIO21, SCL=GPIO22
   ads.begin(0x48, &Wire);
   ads.setGain(GAIN_ONE);  // +/-4.096V range for 0-3.3V op-amp output
+
+  if (imu.begin()) {
+    imu.setExtCrystalUse(true);  // use external 32kHz crystal on breakout
+  } else {
+    Serial.println("BNO055 not found — force-only mode");
+  }
   // ... BLE setup unchanged
 }
 
 void loop() {
   if (deviceConnected) {
-    sensorData.left_heel  = ads.readADC_SingleEnded(0);  // Ch A output
-    sensorData.left_ball  = 0;  // No ball sensor in 4-sensor config
-    sensorData.left_toe   = ads.readADC_SingleEnded(1);  // Ch B output
-    sensorData.right_heel = ads.readADC_SingleEnded(2);  // Ch C output
-    sensorData.right_ball = 0;  // No ball sensor in 4-sensor config
-    sensorData.right_toe  = ads.readADC_SingleEnded(3);  // Ch D output
+    SensorDataV2 data;
+    data.left_heel  = ads.readADC_SingleEnded(0);
+    data.left_ball  = 0;
+    data.left_toe   = ads.readADC_SingleEnded(1);
+    data.right_heel = ads.readADC_SingleEnded(2);
+    data.right_ball = 0;
+    data.right_toe  = ads.readADC_SingleEnded(3);
 
-    pCharacteristic->setValue((uint8_t*)&sensorData, sizeof(sensorData));
+    sensors_event_t euler;
+    imu.getEvent(&euler, Adafruit_BNO055::VECTOR_EULER);
+    data.pitch_cdeg = (int16_t)(euler.orientation.z * 100);
+    data.roll_cdeg  = (int16_t)(euler.orientation.y * 100);
+    data.yaw_cdeg   = (int16_t)(euler.orientation.x * 100);
+
+    pCharacteristic->setValue((uint8_t*)&data, sizeof(data));
     pCharacteristic->notify();
     delay(20);  // 50Hz
   }
@@ -410,9 +579,17 @@ void loop() {
 - [ ] Each op-amp output (pins 1, 7, 8, 13): ~0V (no sensor = no current = no output)
 
 ### ADC Verification
-- [ ] I2C scanner finds 0x48
+- [ ] I2C scanner finds 0x48 (ADS1115) AND 0x28 (BNO055)
 - [ ] With no sensors: all 4 channels read near 0
 - [ ] With sensor pressed by hand: reading increases smoothly
+
+### IMU Verification
+- [ ] BNO055 breakout module seats fully in socket
+- [ ] Board flat on table: pitch ≈ 0°, roll ≈ 0°
+- [ ] Tilt board 45° forward: pitch reads ~45°
+- [ ] Tilt board 45° sideways: roll reads ~45°
+- [ ] Rotate board: yaw changes (absolute heading)
+- [ ] No axis conflicts (pitch change does not affect roll reading)
 
 ### Sensor Verification
 - [ ] Connect FlexiForce A301 to each connector
@@ -442,26 +619,42 @@ void loop() {
 | FlexiForce Integration Guide | https://www.tekscan.com/resources/user-manual/flexiforce-sensors-integration-guide |
 | MCP6004 | https://ww1.microchip.com/downloads/en/DeviceDoc/MCP6001-1R-1U-2-4-1MHz-Low-Power-Op-Amp-DS20001733L.pdf |
 | ADS1115 | https://www.ti.com/lit/ds/symlink/ads1115.pdf |
+| BNO055 9-DOF IMU | https://cdn-shop.adafruit.com/datasheets/BST_BNO055_DS000_12.pdf |
+| Adafruit BNO055 breakout | https://www.adafruit.com/product/2472 |
 | ESP32-WROOM-32 | https://www.espressif.com/sites/default/files/documentation/esp32-wroom-32_datasheet_en.pdf |
 | CP2102N | https://www.silabs.com/documents/public/data-sheets/cp2102n-a01-datasheet.pdf |
 
 ---
 
-## Sensor Purchase Information
+## Off-Board Purchase Information
 
 | Item | Part Number | Qty | Unit Price | Source |
 |---|---|---|---|---|
-| FlexiForce A301-100 | 3718-A301-100-ND | 6 | $12.22 | [DigiKey](https://www.digikey.com/en/products/detail/tekscan/A301-100/14565594) |
-| MCP6004-I/ST (SOIC-14) | C7378 | 2 | ~$0.50 | LCSC |
-| 10kΩ 1% 0603 resistor | C25804 | 10 | ~$0.01 | LCSC |
-| 47kΩ 1% 0603 resistor | C25819 | 2 | ~$0.01 | LCSC |
+| FlexiForce A301-100-8 | (Tekscan 8-pack, already ordered) | 1 pack | — | Tekscan direct |
+| Adafruit BNO055 breakout | Adafruit #2472 | 1 | ~$35 | [Adafruit](https://www.adafruit.com/product/2472) |
+| CJMCU-055 BNO055 (budget alt) | — | 1 | ~$6-10 | AliExpress / Amazon |
 
-**Total sensor + conditioning cost: ~$75 for 6 sensors + all passives**
+All PCB-mounted components (MCP6004, ADS1115, passives, headers) are ordered via JLCPCB PCBA assembly using the BOM table above.
+
+---
+
+## Dual-Mode Usage (Rowing + Balance Board)
+
+The V2 PCB is hardware-agnostic with respect to whether the FlexiForce sensors are placed in shoe insoles (rowing mode) or on a balance board surface (balance mode). The same 4 headers accept either sensor set.
+
+| Mode | Sensor Placement | App View |
+|---|---|---|
+| Rowing | FlexiForce sensors taped inside shoe insoles (heel + toe per foot) | "Rowing" tab — stroke phase detection, force curves |
+| Balance Board | FlexiForce sensors on balance board surface (at heel + toe positions per foot) | "Balance Board" tab — CoP, velocity, ellipse area, games |
+
+**Physical swap** (~10 seconds): unplug the 4 FlexiForce sensor pigtails from the PCB headers, swap to the other sensor set, plug in.
+
+The IMU is on-board and remains active in both modes. In rowing mode, the IMU's orientation data provides context for drive/recovery timing. In balance mode, it measures board tilt (if on a rocker board) or trunk sway (if cable-extended to a chest strap).
 
 ---
 
 ## Document Version
 
-**V2.0** — April 2026
+**V2.1** — April 2026
 **Author:** Dean Arvan
-**Changes from V1:** Complete analog front-end redesign. FSR-402 voltage dividers replaced with FlexiForce A301 op-amp conditioning. Dual ADS1115 reduced to single ADS1115. V1 A0/A1 routing defect eliminated.
+**Changes from V1:** Complete analog front-end redesign. FSR-402 voltage dividers replaced with FlexiForce A301-100-8 op-amp conditioning. Dual ADS1115 reduced to single ADS1115. V1 A0/A1 routing defect eliminated. **Added: BNO055 9-DOF IMU for tilt/orientation sensing. Added: 2.54mm female headers for direct FlexiForce plug-in. Documented dual-mode operation (rowing + balance board).**
