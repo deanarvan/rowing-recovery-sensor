@@ -1,100 +1,88 @@
-# PCB V2 Redesign Brief — FlexiForce Sensor Upgrade
+# Rowing/Balance Board Rehabilitation Sensor — PCB Design Brief
 
-**Project:** Rowing/Balance Board Rehabilitation Sensor — V2
-**Date:** April 2026
-**Board Size:** 50mm x 70mm (same as V1)
-**Manufacturing:** JLCPCB / PCBWay compatible
-**Revision Purpose:** Replace FSR-402 voltage dividers with FlexiForce A301 op-amp conditioning circuits. Fix V1 routing defect (A0/A1 short on right ADS1115).
+**Project:** Rowing/Balance Board Rehabilitation Sensor
+**Board Size:** 50mm × 70mm, 2-layer
+**Manufacturing:** JLCPCB / PCBWay compatible (PCBA assembly service preferred)
+**Deliverables:** KiCad schematic (.kicad_sch), PCB layout (.kicad_pcb), Gerbers, BOM with LCSC part numbers, pick-and-place file
 
 ---
 
-## Executive Summary
+## Project Overview
 
-V1 used FSR-402 sensors that saturate at ~100N — patient needs 1,500N+ for clinical testing. V2 switches to Tekscan FlexiForce A301-100-8 thin-film sensors (0.2mm thick, range up to 4,448N) with an active op-amp conditioning circuit. V2 also adds a BNO055 9-DOF IMU for board tilt and trunk angle measurement during balance assessments. This replaces the 6x passive voltage dividers and one of the two ADS1115 ADCs. Everything else (ESP32, USB-C, power supply, BLE) is unchanged.
+This PCB is the central electronics module for a bilateral force-sensing platform used in physical therapy rehabilitation monitoring. It reads four thin-film force sensors (Tekscan FlexiForce A301-100), measures board orientation via a 9-DOF IMU, and streams the combined data to a web application over Bluetooth Low Energy at 50 Hz.
 
-**Dual-use support:** The same V2 PCB supports both **Rowing mode** (FlexiForce sensors in shoe insoles) and **Balance Board mode** (FlexiForce sensors on board surface). Sensor sets are swapped via the 4 front-panel headers.
+The same hardware supports two operating modes, selected by sensor placement:
+- **Rowing mode** — FlexiForce sensors placed in shoe insoles (heel + toe of each foot). The web app detects stroke phases and analyzes force curves.
+- **Balance board mode** — FlexiForce sensors placed on a balance platform at heel + toe positions for each foot. The web app computes center of pressure (CoP), sway velocity, ellipse area, and drives interactive balance training games.
 
-### What Changes
+Both modes use the same 4 sensor channels and the same BLE data format. The user physically swaps sensor sets by plugging different cables into the 4 front-panel headers.
 
-| V1 (Current) | V2 (New) |
+### Key Design Requirements
+
+| Requirement | Value |
 |---|---|
-| 2x ADS1115 ADCs | **1x ADS1115 ADC** (single chip, all 4 channels) |
-| 6x 10kΩ voltage dividers | **4x inverting op-amp circuits** (1x MCP6004 quad) |
-| 6x JST-PH 2-pin connectors | **4x 2.54mm female headers** (direct FlexiForce plug-in) |
-| FSR-402 sensors (100N max) | **FlexiForce A301-100-8 sensors** (4,448N max) |
-| 6 sensor channels | **4 sensor channels** (no ball-of-foot) |
-| Right ADS1115 A0/A1 shorted | **Defect eliminated** (only 1 ADS1115, all 4 channels used) |
-| No IMU | **BNO055 9-DOF IMU** added for tilt/orientation |
-
-### What Stays the Same
-
-- ESP32-WROOM-32 (or ESP32-S3) module — same BLE stack
-- USB-C connector + CP2102N USB-to-UART bridge
-- AMS1117-3.3 LDO voltage regulator
-- BOOT button (GPIO0) + RESET button (EN)
-- I2C pull-ups (4.7kΩ on SDA/SCL)
-- Power LED + current-limiting resistor
-- Board size: 50mm x 70mm, 2-layer
-- Power: 5V USB → 3.3V regulated
+| Force sensor channels | 4 (2 per foot: heel + toe) |
+| Force measurement range (per sensor) | 0 to ~2,000 N |
+| Sensor type | Tekscan FlexiForce A301-100 thin-film |
+| Orientation sensing | 9-DOF IMU (pitch, roll, yaw) |
+| Sample rate | 50 Hz per channel |
+| Wireless protocol | Bluetooth Low Energy (BLE 5.0) |
+| Power input | 5V USB-C |
+| Regulated rail | 3.3V (1A capable LDO) |
+| Programming | USB serial via CP2102N bridge |
+| Board outline | 50mm × 70mm, 2-layer |
 
 ---
 
-## System Block Diagram (V2)
+## System Block Diagram
 
 ```
 ┌─────────────┐
 │  USB-C 5V   │
 └──────┬──────┘
        │
-       ├─ CP2102N UART Bridge (U2)
+       ├─ CP2102N USB-to-UART Bridge (U2)
        │  (TX → ESP32 GPIO1, RX ← ESP32 GPIO3)
        │
-       ├─ AMS1117-3.3 LDO (U1)
+       ├─ AMS1117-3.3 LDO (U1) ── 3.3V rail
        │
        ├─ ESP32-WROOM-32 (U3)
        │  ├─ I2C SDA = GPIO21, SCL = GPIO22
        │  ├─ GPIO0 (BOOT button)
        │  ├─ EN (RESET button)
-       │  └─ BLE antenna (keep-out zone)
+       │  └─ BLE antenna (keep-out zone required)
        │
-       ├─ MCP6004 Quad Op-Amp (U4) ← NEW
-       │  ├─ Ch A (pin 1) ← Left Heel FlexiForce → ADS1115 A0
-       │  ├─ Ch B (pin 7) ← Left Toe FlexiForce  → ADS1115 A1
-       │  ├─ Ch C (pin 8) ← Right Heel FlexiForce → ADS1115 A2
-       │  └─ Ch D (pin 14)← Right Toe FlexiForce  → ADS1115 A3
+       ├─ MCP6004 Quad Op-Amp (U4) — analog conditioning
+       │  ├─ Ch A → FlexiForce: Left Heel  → ADS1115 A0
+       │  ├─ Ch B → FlexiForce: Left Toe   → ADS1115 A1
+       │  ├─ Ch C → FlexiForce: Right Heel → ADS1115 A2
+       │  └─ Ch D → FlexiForce: Right Toe  → ADS1115 A3
        │
-       ├─ ADS1115 @ 0x48 (U5) ← ONE chip only
-       │  ├─ A0 ← Op-amp Ch A output (Left Heel)
-       │  ├─ A1 ← Op-amp Ch B output (Left Toe)
-       │  ├─ A2 ← Op-amp Ch C output (Right Heel)
-       │  ├─ A3 ← Op-amp Ch D output (Right Toe)
-       │  ├─ ADDR → GND (address 0x48)
-       │  └─ I2C bus (SDA/SCL)
+       ├─ ADS1115 16-bit I2C ADC @ 0x48 (U5)
+       │  ├─ A0-A3 ← Op-amp outputs
+       │  ├─ ADDR → GND (sets address 0x48)
+       │  └─ Shares I2C bus with IMU
        │
-       └─ BNO055 9-DOF IMU @ 0x28 (U6) ← NEW
-          ├─ SDA → I2C bus (shared with ADS1115)
-          ├─ SCL → I2C bus (shared with ADS1115)
-          ├─ INT → ESP32 GPIO4 (optional motion interrupt)
-          ├─ ADR → GND (address 0x28)
-          ├─ PS0 → GND (I2C mode)
-          ├─ PS1 → GND (I2C mode)
-          └─ Outputs: Euler angles, quaternion, linear accel, gravity
+       └─ BNO055 9-DOF IMU @ 0x28 (U6, breakout socket)
+          ├─ Outputs: Euler angles, quaternion, linear acceleration
+          ├─ ADR → GND (sets address 0x28)
+          └─ Shares I2C bus with ADC
 ```
 
 ---
 
-## FlexiForce A301 Conditioning Circuit — Per Channel
+## Analog Front-End Design
 
-The FlexiForce A301 is a 2-terminal variable-resistance sensor. Unlike the FSR-402 (which used a passive voltage divider), it requires an **inverting op-amp circuit** for linear output.
+### FlexiForce A301 Conditioning Circuit (per channel, ×4)
 
-### Schematic (one of 4 identical channels)
+The FlexiForce A301 is a 2-terminal resistive force sensor. Its resistance decreases as applied force increases. An **inverting op-amp circuit** converts this variable resistance to a proportional output voltage with good linearity across the full force range.
 
 ```
-                          Rf (feedback resistor)
+                       Rf (feedback resistor)
                     ┌──────────────────────────┐
                     │                          │
                     │      ┌──────────┐        │
- Vref ─── Rd ──────┤(-)   │  1/4 of  │  (out) ├───── To ADS1115 input (A0-A3)
+ Vref ─── Rd ──────┤(-)   │  1/4 of  │  (out) ├───── ADS1115 input (A0-A3)
   │                │      │  MCP6004 │        │
   │   FlexiForce   │(+)   │          │        │
   │   ┌────────┐   │      └──────────┘        │
@@ -102,256 +90,189 @@ The FlexiForce A301 is a 2-terminal variable-resistance sensor. Unlike the FSR-4
       └────────┘   │                           │
                    GND                         │
                                           Cf (optional)
-                                         100pF - 1nF
+                                         100pF
 ```
 
-### How It Works
+The op-amp output follows the relation **Vout = Vref × (Rf / Rsensor)**. As force increases, Rsensor decreases, and Vout increases linearly — from ~0V (no force) to ~3V (full range).
 
-1. **Vref** (reference voltage, ~0.5V from a voltage divider off 3.3V) drives a small current through **Rd** (drive resistor) and through the **FlexiForce sensor** to ground.
-2. The current through the sensor depends on its resistance, which decreases with applied force.
-3. The op-amp in inverting configuration converts this current to a voltage: **Vout = Vref × (Rf / Rsensor)**
-4. As force increases → Rsensor decreases → Vout increases → ADS1115 reads higher.
-5. **Rf** (feedback resistor) sets the measurement range.
+### Component Values (per channel)
 
-### Component Values
+| Component | Value | Tolerance | Package | Purpose |
+|---|---|---|---|---|
+| Rf (feedback resistor) | 10 kΩ | 1% | 0603 | Sets force range to ~0–2,000 N |
+| Rd (drive resistor) | 10 kΩ | 1% | 0603 | Sets reference current |
+| Cf (output filter cap) | 100 pF | 10% | 0603 | Optional low-pass filter |
 
-| Component | Value | Purpose | Notes |
-|-----------|-------|---------|-------|
-| **Rf** (feedback) | **10kΩ** | Sets force range to ~0-2000N | See range table below |
-| **Rd** (drive) | **10kΩ** | Limits reference current | Sets Vref attenuation |
-| **Cf** (optional) | **100pF** | Low-pass filter on output | Reduces high-freq noise |
-| **Rvd1** | **47kΩ** | Voltage divider top (Vref gen) | Shared across all 4 channels |
-| **Rvd2** | **10kΩ** | Voltage divider bottom (Vref gen) | Generates Vref ≈ 0.58V |
+**Force range tuning** — the Rf value selects the measurement range. 10 kΩ is recommended for this rehabilitation use case:
 
-### Force Range vs Feedback Resistor
+| Rf | Force Range | Use Case |
+|---|---|---|
+| 49.9 kΩ | 0 – 445 N | Light touch, seated exercises |
+| **10 kΩ** (chosen) | **0 – 2,000 N** | **Standing, squats, heel raises** |
+| 4.7 kΩ | 0 – 3,500 N | Heavy dynamic loading |
+| 1 kΩ | 0 – 4,448 N | Impact / jump landing |
 
-| Rf Value | Approx. Force Range | Output at Full Scale | Best For |
-|----------|--------------------|--------------------|----------|
-| 49.9kΩ | 0 – 445N (100 lbs) | ~3.0V | Light touch testing |
-| **10kΩ** | **0 – 2,000N (450 lbs)** | **~3.0V** | **Rehab: standing, squats** |
-| 4.7kΩ | 0 – 3,500N (800 lbs) | ~3.0V | Heavy dynamic loading |
-| 1kΩ | 0 – 4,448N (1,000 lbs) | ~3.0V | Maximum range |
+### Shared Vref Generation
 
-**Recommended: Rf = 10kΩ** for clinical rehabilitation monitoring. This gives 0–2,000N per sensor (4 sensors × 2,000N = 8,000N total capacity = ~9.7× bodyweight for 84kg patient). More than sufficient for heel raises (2.5×BW), squats (2×BW), and jump landing (3×BW).
-
-**Designer note:** If field-adjustable range is desired, replace each Rf with a **10kΩ trimpot** (e.g., Bourns 3296W or 0603 trimpot). This allows calibration without board rework.
-
----
-
-## Vref Generation (Shared)
-
-A single voltage divider generates the reference voltage for all 4 op-amp channels:
+A single voltage divider off the 3.3V rail generates the reference voltage used by all 4 op-amp channels.
 
 ```
-3.3V ─── Rvd1 (47kΩ) ──┬── Vref (~0.58V) ──→ To Rd on each of 4 channels
+3.3V ─── Rvd1 (47kΩ) ──┬── Vref (~0.58V) → to Rd on each channel
                          │
                     Rvd2 (10kΩ)
                          │
                         GND
                          │
-                    Cvref (100nF)  ← bypass cap for stable Vref
+                    Cvref (100nF to GND)
 ```
 
-**Vref = 3.3V × 10kΩ / (47kΩ + 10kΩ) = 0.579V**
+**Vref = 3.3V × 10kΩ / (47kΩ + 10kΩ) ≈ 0.58V**
 
-This low Vref ensures the op-amp output stays within the ADS1115's 0–3.3V input range across the full force range.
+This low reference voltage keeps the op-amp output within the ADS1115's 0–3.3V input range across the full force range.
 
----
+### MCP6004 Quad Op-Amp (U4)
 
-## MCP6004 Pinout and Wiring
-
-The MCP6004 is a **quad** rail-to-rail op-amp in a 14-pin SOIC (or DIP) package. One chip handles all 4 sensor channels.
+The MCP6004 is a quad rail-to-rail input/output op-amp in SOIC-14. A single chip handles all 4 sensor channels.
 
 ```
-MCP6004 (SOIC-14 or DIP-14)
+MCP6004 (SOIC-14)
 ┌──────────────────┐
 │ 1  OUT_A    VDD 14│──── 3.3V
 │ 2  IN-_A   OUT_D 13│──── → ADS1115 A3 (Right Toe)
 │ 3  IN+_A   IN-_D 12│──── Rf_D + Rd_D
-│ 4  VSS     IN+_D 11│──── GND (via sensor)
+│ 4  VSS     IN+_D 11│──── GND (sensor reference)
 │ 5  IN+_B   IN-_C 10│──── Rf_C + Rd_C
-│ 6  IN-_B   IN+_C  9│──── GND (via sensor)
+│ 6  IN-_B   IN+_C  9│──── GND (sensor reference)
 │ 7  OUT_B   OUT_C   8│──── → ADS1115 A2 (Right Heel)
 └──────────────────┘
 ```
 
-### Channel Assignment
+Channel assignments:
 
-| MCP6004 Channel | Op-Amp Pins (OUT, IN-, IN+) | Sensor | ADS1115 Input |
+| MCP6004 Channel | OUT / IN– / IN+ pins | Sensor | ADS1115 Input |
 |---|---|---|---|
-| A | Pin 1 (out), Pin 2 (in-), Pin 3 (in+) | Left Heel | A0 |
-| B | Pin 7 (out), Pin 6 (in-), Pin 5 (in+) | Left Toe | A1 |
-| C | Pin 8 (out), Pin 10 (in-), Pin 9 (in+) | Right Heel | A2 |
-| D | Pin 13 (out), Pin 12 (in-), Pin 14 (in+) | Right Toe | A3 |
+| A | 1 / 2 / 3 | Left Heel | A0 |
+| B | 7 / 6 / 5 | Left Toe | A1 |
+| C | 8 / 10 / 9 | Right Heel | A2 |
+| D | 13 / 12 / 14 | Right Toe | A3 |
 
-### Per-Channel Wiring Detail
-
-For **each** of the 4 channels (A through D):
-
-| Connection | From | To | Notes |
-|---|---|---|---|
-| Feedback resistor (Rf) | MCP6004 OUT pin | MCP6004 IN- pin | 10kΩ 0603, 1% tolerance recommended |
-| Drive resistor (Rd) | Vref net | MCP6004 IN- pin | 10kΩ 0603, 1% tolerance recommended |
-| Sensor pin 1 | MCP6004 IN+ pin | FlexiForce connector pin 1 | Non-inverting input |
-| Sensor pin 2 | GND | FlexiForce connector pin 2 | Ground reference |
-| Output to ADC | MCP6004 OUT pin | ADS1115 Ax input | Direct trace, keep short |
-| Optional filter cap (Cf) | MCP6004 OUT pin | GND | 100pF 0603, optional |
-
-### MCP6004 Power
-
-| Pin | Connection | Decoupling |
-|---|---|---|
-| VDD (pin 14) | 3.3V rail | 100nF ceramic (0603) to GND, placed within 5mm of pin |
-| VSS (pin 4) | GND | Direct to ground plane |
+**Power:** VDD (pin 14) to 3.3V with 100nF + 10µF decoupling placed within 5mm of the pin. VSS (pin 4) to ground plane.
 
 ---
 
-## ADS1115 Configuration (U5)
+## Digital Section
 
-**One ADS1115 only** (V1 had two). Address 0x48 (ADDR pin to GND).
+### ADS1115 16-bit ADC (U5)
+
+Single ADS1115 reads all 4 op-amp outputs over I2C.
 
 | Pin | Name | Connection |
 |---|---|---|
-| 1 | VDD | 3.3V (via 100nF decoupling cap) |
-| 2 | A0 | Op-amp Ch A output (Left Heel) |
-| 3 | A1 | Op-amp Ch B output (Left Toe) |
-| 4 | A2 | Op-amp Ch C output (Right Heel) |
-| 5 | A3 | Op-amp Ch D output (Right Toe) |
+| 1 | VDD | 3.3V (with 100nF decoupling cap to GND) |
+| 2 | A0 | MCP6004 Channel A output (Left Heel) |
+| 3 | A1 | MCP6004 Channel B output (Left Toe) |
+| 4 | A2 | MCP6004 Channel C output (Right Heel) |
+| 5 | A3 | MCP6004 Channel D output (Right Toe) |
 | 6 | GND | Ground plane |
 | 7 | SDA | I2C SDA bus (GPIO21) |
 | 8 | SCL | I2C SCL bus (GPIO22) |
-| 9 | ADDR | GND (sets address 0x48) |
-| 10 | ALERT | Not connected (leave floating or tie to 3.3V via 10kΩ) |
+| 9 | ADDR | GND (sets I2C address to 0x48) |
+| 10 | ALERT | Leave unconnected |
 
-**All 4 analog inputs are used** — no floating inputs, eliminating the V1 crosstalk problem.
+### BNO055 9-DOF IMU (U6)
 
-**Firmware ADC configuration:**
-- Gain: `GAIN_ONE` (+/-4.096V range, LSB = 125µV) — recommended for 0–3.3V op-amp output
-- Sample rate: 128 SPS (default, adequate for 50Hz per-channel)
-- Mode: Single-ended reads on A0–A3
+The BNO055 provides absolute orientation with onboard sensor fusion (Euler angles, quaternion, linear acceleration, gravity vector) — no host-side filtering required.
 
----
+**Integration approach:** socket a pre-assembled BNO055 breakout module onto the PCB via a 2×5 (10-pin) 2.54mm female header. This simplifies assembly and avoids the difficulty of hand-placing the LGA-28 package.
 
-## IMU — BNO055 9-DOF Orientation Sensor (U6) [NEW]
+Compatible breakout modules:
+- Adafruit BNO055 (product #2472) — 10-pin 0.1" header
+- CJMCU-055 breakout (AliExpress / Amazon) — identical pinout, budget option
+- DFRobot Sen0375
 
-### Purpose
+**Alternative:** direct IC assembly (LGA-28 package + 32.768 kHz crystal + 22pF caps + 0.1µF decoupling) if PCBA service is available.
 
-The BNO055 adds absolute orientation sensing to the board. Use cases:
-
-1. **Board tilt angle** — when mounted on a wobble/rocker/BOSU-style surface, measures real-time pitch and roll of the board (frame of reference for CoP data)
-2. **Trunk sway** — when routed via external cable to a chest/waist strap, measures postural lean during balance assessment
-3. **Dynamic reference frame** — correlates CoP shifts with actual postural strategy (ankle-dominant vs hip-dominant balance)
-4. **Tilt-controlled games** — the web app can drive balance training games using live tilt data
-
-### Integration Approach
-
-**Recommended:** socket a pre-assembled BNO055 breakout module onto the V2 PCB via a 2x5 (10-pin) female header. This avoids the difficulty of hand-placing the LGA-28 package and simplifies freelancer assembly.
-
-Compatible breakout modules (any of these):
-- Adafruit BNO055 Absolute Orientation Sensor (product #2472) — 10-pin 0.1" header, widely available
-- CJMCU-055 breakout (AliExpress / Amazon) — same pinout, ~$6
-- DFRobot BNO055 Sen0375
-
-**Alternative (if the freelancer prefers direct IC assembly):** Use the BNO055 LGA-28 with external 32.768 kHz crystal, 22pF load caps, and 0.1µF decoupling on each supply pin. JLCPCB can SMT-assemble this if the board is ordered with PCBA service.
-
-### Wiring (U6 — BNO055 breakout socket)
+#### Breakout Socket Wiring (U6)
 
 | Breakout Pin | Connect To | Notes |
 |---|---|---|
-| VIN / VDD | 3.3V | Powered from LDO output |
-| 3V3 (if present) | Not connected | Some breakouts have this output — leave floating |
-| GND | Ground plane | — |
-| SDA | I2C SDA bus (GPIO21) | Shared with ADS1115, existing 4.7kΩ pull-up sufficient |
-| SCL | I2C SCL bus (GPIO22) | Shared with ADS1115, existing 4.7kΩ pull-up sufficient |
-| INT | ESP32 GPIO4 | Optional motion interrupt (not required, leave unconnected if unused) |
-| RST | ESP32 GPIO5 | Optional hardware reset (pull high via 10kΩ to 3.3V if unconnected) |
+| VIN / VDD | 3.3V | |
+| GND | Ground plane | |
+| SDA | I2C SDA (GPIO21) | Shared bus with ADS1115 |
+| SCL | I2C SCL (GPIO22) | Shared bus with ADS1115 |
+| INT | ESP32 GPIO4 | Optional motion interrupt (leave unconnected if unused) |
+| RST | ESP32 GPIO5 | Optional hardware reset; pull high via 10 kΩ to 3.3V if unconnected |
 | ADR | GND | Sets I2C address to 0x28 |
 | PS0 | GND | Standard I2C protocol mode |
 | PS1 | GND | Standard I2C protocol mode |
 
-### I2C Bus Configuration
+### I2C Bus
 
-Both devices share one I2C bus:
+Both devices share one I2C bus driven by the ESP32 on GPIO21 (SDA) and GPIO22 (SCL).
 
-| Device | I2C Address | Purpose |
+| Device | Address | Package |
 |---|---|---|
-| ADS1115 (U5) | 0x48 | Force sensor ADC |
-| BNO055 (U6) | 0x28 | 9-DOF IMU |
+| ADS1115 | 0x48 | MSOP-10 on-board |
+| BNO055 | 0x28 | Off-board breakout via socket |
 
-Existing 4.7kΩ pull-ups on SDA/SCL are sufficient for both devices at 400 kHz.
+Bus pull-ups: 4.7 kΩ to 3.3V on both SDA and SCL. 400 kHz fast mode.
 
-### Placement
+### IMU Axis Alignment
 
-Place the BNO055 socket on the V2 PCB such that the IMU's internal axes align with the board's physical axes:
-- **X-axis** → board length (rowing direction / anterior-posterior)
-- **Y-axis** → board width (medial-lateral)
-- **Z-axis** → up (perpendicular to board surface)
+Place the BNO055 socket on the PCB such that the module's printed axes align with the board's physical frame of reference:
 
-If the IMU is rotated relative to this convention, the firmware can apply a rotation matrix, but physical alignment simplifies the data interpretation.
+- **IMU X+** → board length direction (anterior, toward the toe-end of the sensor layout)
+- **IMU Y+** → board width direction (medial-lateral)
+- **IMU Z+** → up (perpendicular to board surface)
 
-### Firmware Integration
+With this alignment, pitch rotates around Y, roll rotates around X, yaw rotates around Z.
 
-Use the Adafruit BNO055 library (`Adafruit_BNO055`). Initialize in `setup()`:
+### ESP32-WROOM-32 (U3)
 
-```cpp
-#include <Adafruit_BNO055.h>
-#include <utility/imumaths.h>
+Standard ESP32-WROOM-32 module handles all logic and BLE wireless.
 
-Adafruit_BNO055 imu = Adafruit_BNO055(55, 0x28, &Wire);
+| Pin | Name | Connection |
+|---|---|---|
+| 1 | GND | Ground plane |
+| 2 | VCC | 3.3V rail |
+| 3 | RXD (GPIO3) | UART RX from CP2102N |
+| 4 | EN | RESET button + 10 kΩ pull-up to 3.3V |
+| 27 | GPIO0 | BOOT button + 10 kΩ pull-up to 3.3V |
+| 21 | GPIO21 | I2C SDA (4.7 kΩ pull-up) |
+| 22 | GPIO22 | I2C SCL (4.7 kΩ pull-up) |
 
-void setup() {
-  // ... existing I2C and ADS1115 setup ...
-  if (!imu.begin()) {
-    Serial.println("BNO055 not found — continuing without IMU");
-  } else {
-    imu.setExtCrystalUse(true);
-  }
-}
+**Antenna keep-out:** no copper (traces or ground plane) within 10mm of the ESP32 antenna end. The antenna should overhang the board edge or sit in a dedicated clear zone.
 
-void loop() {
-  if (deviceConnected) {
-    // ... existing ADC reads ...
+### CP2102N USB-to-UART Bridge (U2)
 
-    // Read IMU Euler angles (degrees)
-    sensors_event_t euler;
-    imu.getEvent(&euler, Adafruit_BNO055::VECTOR_EULER);
-    // euler.orientation.x = heading (yaw), 0-360°
-    // euler.orientation.y = roll, -180 to +180°
-    // euler.orientation.z = pitch, -90 to +90°
+Standard USB programming interface.
 
-    // Extend BLE payload with IMU data (see below)
-  }
-}
-```
+| Pin | Name | Connection |
+|---|---|---|
+| 1 | VCC | 3.3V (with 100nF decoupling) |
+| 3 | D+ | USB connector D+ (via 22Ω series resistor) |
+| 4 | D- | USB connector D- (via 22Ω series resistor) |
+| 5 | TXD | ESP32 GPIO1 (via 1 kΩ series resistor) |
+| 6 | RXD | ESP32 GPIO3 (via 1 kΩ series resistor) |
+| 10 | REGIN | 5V rail (with 100nF decoupling) |
 
-### BLE Payload Extension
+### Power Supply
 
-V1 payload: 12 bytes (6x uint16 force values).
-V2 payload: **18 bytes** — adds 3x int16 for pitch, roll, yaw in 0.01° units (range ±327.67°).
+| Net | Voltage | Source | Notes |
+|---|---|---|---|
+| 5V_USB | 5.0V | USB-C connector | Max 500 mA per USB spec |
+| 3V3 | 3.3V | AMS1117-3.3 LDO | 1A capacity; typical draw <200 mA |
+| GND | 0V | Continuous ground plane | |
 
-```cpp
-struct __attribute__((packed)) SensorDataV2 {
-  uint16_t left_heel;
-  uint16_t left_ball;   // 0 (not connected)
-  uint16_t left_toe;
-  uint16_t right_heel;
-  uint16_t right_ball;  // 0 (not connected)
-  uint16_t right_toe;
-  int16_t pitch_cdeg;   // 0.01° units
-  int16_t roll_cdeg;    // 0.01° units
-  int16_t yaw_cdeg;     // 0.01° units
-};  // 18 bytes
-```
-
-The web app (`useForceData.js`) parses the extra bytes; old 12-byte parsers remain backward-compatible by ignoring the trailing 6 bytes.
+Decoupling: 100nF + 10µF on LDO input and output. 100nF per IC VDD pin placed within 5mm.
 
 ---
 
-## Sensor Connectors (J2–J5)
+## Sensor Connectors
 
-**4x 2-pin 0.1" (2.54mm) pitch female through-hole headers**
+**4× 2-pin 2.54mm female through-hole headers (J2–J5)**
 
-The FlexiForce A301 terminates in 2 male square pins at 0.1" pitch. These plug directly into standard 2-pin female headers on the PCB — no adapter cables, no soldering to the sensor, instant swap if a sensor needs replacement.
+The FlexiForce A301 terminates in 2 male square pins at 0.1" pitch. These plug directly into standard 2-pin female headers on the PCB — no adapter cables, no soldering to the sensor, easy swap for replacement.
 
 | Connector | Sensor | Op-Amp Channel | ADS1115 Input |
 |---|---|---|---|
@@ -364,250 +285,166 @@ The FlexiForce A301 terminates in 2 male square pins at 0.1" pitch. These plug d
 - Pin 1: Sensor signal → MCP6004 IN+ (non-inverting input)
 - Pin 2: GND
 
-**Part:** Standard 2-pin 2.54mm female header, through-hole (e.g., LCSC C35165 or any generic 1x2 female header). Place connectors along the board edge for easy cable routing to the balance board.
+**Part:** 2-pin 2.54mm female header, through-hole (LCSC C35165 or equivalent). Place J2–J5 along one board edge for clean cable routing.
 
 ---
 
-## Complete Bill of Materials (V2)
+## Bill of Materials
 
-### Retained from V1 (unchanged)
+All on-board components. Off-board parts (BNO055 breakout, FlexiForce sensors) are listed in a separate section below.
 
-| Designator | Value | Description | LCSC | Qty |
-|---|---|---|---|---|
-| U1 | AMS1117-3.3 | 3.3V LDO Regulator | C6186 | 1 |
-| U2 | CP2102N | USB-to-UART Bridge | C7520 | 1 |
-| U3 | ESP32-WROOM-32 | BLE/WiFi MCU Module | C529143 | 1 |
-| R7 | 1kΩ | LED current limiting | C14663 | 1 |
-| R10 | 4.7kΩ | I2C SDA pull-up | C14631 | 1 |
-| R11 | 4.7kΩ | I2C SCL pull-up | C14631 | 1 |
-| R12 | 10kΩ | GPIO0 (BOOT) pull-up | C14663 | 1 |
-| R13 | 10kΩ | EN (RESET) pull-up | C14663 | 1 |
-| R14 | 22Ω | USB D+ series resistor | C25119 | 1 |
-| R15 | 22Ω | USB D- series resistor | C25119 | 1 |
-| C1 | 100nF | CP2102N VCC decoupling | C14663 | 1 |
-| C2 | 10µF | Input bulk cap (5V) | C13585 | 1 |
-| C3 | 100nF | LDO output decoupling | C14663 | 1 |
-| C4 | 10µF | LDO output bulk cap | C13585 | 1 |
-| C5 | 100nF | ESP32 VCC decoupling | C14663 | 1 |
-| C10 | 100nF | BOOT button debounce (optional) | C14663 | 1 |
-| C11 | 100nF | RESET button debounce (optional) | C14663 | 1 |
-| LED1 | Red LED | Power indicator | C2286 | 1 |
-| SW1 | 6x6mm | BOOT button | C318884 | 1 |
-| SW2 | 6x6mm | RESET button | C318884 | 1 |
-| J1 | USB-C | USB-C mid-mount connector | C165948 | 1 |
-
-### Removed from V1
-
-| V1 Designator | Part | Reason |
-|---|---|---|
-| U4 | ADS1115 @ 0x48 | Replaced by U5 (single ADS1115 reading op-amp outputs) |
-| U5 | ADS1115 @ 0x49 | Had A0/A1 routing defect; eliminated entirely |
-| R1–R6 | 10kΩ (×6) | Voltage dividers no longer needed |
-| C6–C9 | 100nF (×4) | ADS1115 decoupling no longer needed (keep 2 for U5) |
-| J2–J7 | JST-PH 2-pin (×6) | Replaced with 2.54mm female headers for direct FlexiForce plug-in |
-
-### New in V2
-
-| Designator | Value | Description | Package | LCSC | Qty |
+| Designator | Value / Part | Description | Package | LCSC | Qty |
 |---|---|---|---|---|---|
-| **U4** | **MCP6004-I/ST** | **Quad Rail-to-Rail Op-Amp** | **SOIC-14** | **C7378** | **1** |
-| **U5** | **ADS1115** | **16-bit I2C ADC (single)** | **MSOP-10** | **C21992** | **1** |
-| **Rf1** | **10kΩ 1%** | **Feedback resistor, Ch A (L Heel)** | **0603** | **C25804** | **1** |
-| **Rf2** | **10kΩ 1%** | **Feedback resistor, Ch B (L Toe)** | **0603** | **C25804** | **1** |
-| **Rf3** | **10kΩ 1%** | **Feedback resistor, Ch C (R Heel)** | **0603** | **C25804** | **1** |
-| **Rf4** | **10kΩ 1%** | **Feedback resistor, Ch D (R Toe)** | **0603** | **C25804** | **1** |
-| **Rd1** | **10kΩ 1%** | **Drive resistor, Ch A** | **0603** | **C25804** | **1** |
-| **Rd2** | **10kΩ 1%** | **Drive resistor, Ch B** | **0603** | **C25804** | **1** |
-| **Rd3** | **10kΩ 1%** | **Drive resistor, Ch C** | **0603** | **C25804** | **1** |
-| **Rd4** | **10kΩ 1%** | **Drive resistor, Ch D** | **0603** | **C25804** | **1** |
-| **Rvd1** | **47kΩ 1%** | **Vref divider top** | **0603** | **C25819** | **1** |
-| **Rvd2** | **10kΩ 1%** | **Vref divider bottom** | **0603** | **C25804** | **1** |
-| **Cvref** | **100nF** | **Vref bypass cap** | **0603** | **C14663** | **1** |
-| **Cpa** | **100nF** | **MCP6004 VDD decoupling** | **0603** | **C14663** | **1** |
-| **Cpb** | **10µF** | **MCP6004 VDD bulk cap** | **1206** | **C13585** | **1** |
-| **Ca5** | **100nF** | **ADS1115 VDD decoupling** | **0603** | **C14663** | **1** |
-| **J2** | **2-pin 2.54mm female header** | **Left Heel sensor (direct FlexiForce plug-in)** | **TH 2.54mm** | **C35165** | **1** |
-| **J3** | **2-pin 2.54mm female header** | **Left Toe sensor (direct FlexiForce plug-in)** | **TH 2.54mm** | **C35165** | **1** |
-| **J4** | **2-pin 2.54mm female header** | **Right Heel sensor (direct FlexiForce plug-in)** | **TH 2.54mm** | **C35165** | **1** |
-| **J5** | **2-pin 2.54mm female header** | **Right Toe sensor (direct FlexiForce plug-in)** | **TH 2.54mm** | **C35165** | **1** |
-| **U6 (socket)** | **2x5 female header, 2.54mm** | **BNO055 breakout module socket** | **TH 2.54mm** | **C124378** | **1** |
-| **R16** | **10kΩ** | **BNO055 RST pull-up to 3.3V (optional)** | **0603** | **C25804** | **1** |
+| U1 | AMS1117-3.3 | 3.3V LDO regulator | SOT-223 | C6186 | 1 |
+| U2 | CP2102N | USB-to-UART bridge | QFN-28 | C7520 | 1 |
+| U3 | ESP32-WROOM-32 | BLE/WiFi MCU module | 38-pin module | C529143 | 1 |
+| U4 | MCP6004-I/ST | Quad rail-to-rail op-amp | SOIC-14 | C7378 | 1 |
+| U5 | ADS1115 | 16-bit I²C ADC | MSOP-10 | C21992 | 1 |
+| U6 socket | 2×5 female header, 2.54mm | BNO055 breakout socket | TH 2.54mm | C124378 | 1 |
+| Rf1–Rf4 | 10 kΩ 1% | Op-amp feedback resistors | 0603 | C25804 | 4 |
+| Rd1–Rd4 | 10 kΩ 1% | Op-amp drive resistors | 0603 | C25804 | 4 |
+| Rvd1 | 47 kΩ 1% | Vref divider (top) | 0603 | C25819 | 1 |
+| Rvd2 | 10 kΩ 1% | Vref divider (bottom) | 0603 | C25804 | 1 |
+| R10 | 4.7 kΩ | I²C SDA pull-up | 0603 | C14631 | 1 |
+| R11 | 4.7 kΩ | I²C SCL pull-up | 0603 | C14631 | 1 |
+| R12 | 10 kΩ | GPIO0 (BOOT) pull-up | 0603 | C14663 | 1 |
+| R13 | 10 kΩ | EN (RESET) pull-up | 0603 | C14663 | 1 |
+| R14 | 22 Ω | USB D+ series resistor | 0603 | C25119 | 1 |
+| R15 | 22 Ω | USB D- series resistor | 0603 | C25119 | 1 |
+| R16 | 10 kΩ | BNO055 RST pull-up | 0603 | C25804 | 1 |
+| R_LED | 1 kΩ | Power LED current limit | 0603 | C14663 | 1 |
+| R_UART1 | 1 kΩ | CP2102 TX series | 0603 | C14663 | 1 |
+| R_UART2 | 1 kΩ | CP2102 RX series | 0603 | C14663 | 1 |
+| Cvref | 100 nF | Vref bypass cap | 0603 | C14663 | 1 |
+| Cpa | 100 nF | MCP6004 VDD decoupling | 0603 | C14663 | 1 |
+| Cpb | 10 µF | MCP6004 VDD bulk cap | 1206 | C13585 | 1 |
+| Ca5 | 100 nF | ADS1115 VDD decoupling | 0603 | C14663 | 1 |
+| C1 | 100 nF | CP2102N VCC decoupling | 0603 | C14663 | 1 |
+| C2 | 10 µF | Input bulk cap (5V) | 1206 | C13585 | 1 |
+| C3 | 100 nF | LDO output decoupling | 0603 | C14663 | 1 |
+| C4 | 10 µF | LDO output bulk cap | 1206 | C13585 | 1 |
+| C5 | 100 nF | ESP32 VCC decoupling | 0603 | C14663 | 1 |
+| C10 | 100 nF | BOOT debounce (optional) | 0603 | C14663 | 1 |
+| C11 | 100 nF | RESET debounce (optional) | 0603 | C14663 | 1 |
+| LED1 | Red LED | Power indicator | 0603 | C2286 | 1 |
+| SW1 | 6×6mm tactile button | BOOT | SMD 6×6mm | C318884 | 1 |
+| SW2 | 6×6mm tactile button | RESET | SMD 6×6mm | C318884 | 1 |
+| J1 | USB-C receptacle, 24-pin | USB connector (mid-mount) | USB-C SMD | C165948 | 1 |
+| J2–J5 | 2-pin female header, 2.54mm | Sensor connectors | TH 2.54mm | C35165 | 4 |
 
-### Off-Board Parts (purchased separately, plug into V2 PCB)
+Estimated per-board cost: ~$15 in components plus ~$2–5 PCB fabrication (JLCPCB 5-piece minimum).
 
-| Part | Qty | Description | Source |
-|---|---|---|---|
-| Adafruit BNO055 breakout (or CJMCU equivalent) | 1 | Pre-assembled 9-DOF IMU on breakout module | Adafruit / Amazon / AliExpress (~$15-35) |
-| FlexiForce A301-100-8 | 4-6 | Thin-film force sensors | DigiKey / Tekscan |
+### Off-Board Parts (Not on PCB)
 
-### V2 BOM Summary
-
-| Category | Component Count | Est. Cost |
+| Part | Source | Purpose |
 |---|---|---|
-| Retained from V1 | 21 components | ~$11 |
-| New analog front-end (MCP6004 + passives + headers) | 18 components | ~$4 |
-| IMU socket + pull-up | 2 components | ~$0.60 |
-| **Total on-board** | **41 components** | **~$15-16/board** |
-| Off-board: BNO055 breakout module | 1 unit | ~$15-35 |
-
-PCB fabrication (5 boards, JLCPCB): ~$2–5 each
+| Tekscan FlexiForce A301-100 (×4 or ×6 with spares) | DigiKey / Tekscan | Force sensors; plug into J2–J5 |
+| Adafruit BNO055 breakout (#2472) or CJMCU-055 equivalent | Adafruit / Amazon / AliExpress | 9-DOF IMU; sockets into U6 position |
 
 ---
 
-## PCB Layout Recommendations
+## PCB Layout Guidelines
 
 ### Analog Signal Routing (Critical)
 
-1. **Keep op-amp output traces SHORT** — route MCP6004 outputs directly to ADS1115 inputs with minimal trace length (<10mm ideal).
-2. **Star ground** — connect MCP6004 VSS, ADS1115 GND, and Vref divider GND to a common point on the ground plane near the analog section.
-3. **Separate analog and digital ground regions** — ESP32 and CP2102N are digital; MCP6004 and ADS1115 are analog. Connect ground regions at a single point under the LDO.
-4. **Vref trace** — route the Vref net from the divider to all 4 Rd resistors on the top layer, away from digital switching traces.
-5. **Sensor connector placement** — J2–J5 along one or two board edges for easy cable routing to the balance board.
+1. **Keep MCP6004 output traces short** — route directly to ADS1115 inputs with minimal trace length (<10mm ideal).
+2. **Star ground** — connect MCP6004 VSS, ADS1115 GND, and the Vref divider bottom to a single node on the ground plane near the analog section.
+3. **Separate analog and digital zones** — ESP32 and CP2102N on one side of the board, MCP6004/ADS1115/BNO055 on the other. Join the two zones at a single point under the LDO.
+4. **Vref trace** — route the Vref net from the divider to all 4 Rd resistors on the top layer, keep away from digital switching traces.
+5. **Sensor connector placement** — J2–J5 along one edge for easy cable routing.
 
-### Component Placement
+### Suggested Component Placement
 
 ```
 50mm × 70mm Board (Top View)
 ┌────────────────────────────────────────┐
 │  [USB-C]  [CP2102N]  [LED] [SW1][SW2] │  ← Digital section (top edge)
 │                                        │
-│         [ESP32-WROOM-32]               │  ← Center (keep BLE antenna
-│         (large module)                 │     clear of ground plane)
+│         [ESP32-WROOM-32]               │  ← Center; keep antenna clear
+│         (large module)                 │
 │                                        │
-│  [MCP6004]  [ADS1115]    [BNO055      │  ← Analog section
-│  [Rf1-4]    [Rd1-4]       socket U6]  │     IMU socket on right side
-│  [Rvd1/2]   [Cvref]                   │     so axes align with board
+│  [MCP6004]  [ADS1115]    [BNO055      │  ← Analog + IMU section
+│  [Rf1-4]    [Rd1-4]       socket U6]  │
+│  [Rvd1/2]   [Cvref]                   │
 │                                        │
 │  [J2]  [J3]  [J4]  [J5]              │  ← Sensor connectors (bottom edge)
 └────────────────────────────────────────┘
 ```
 
-**IMU axis alignment:** orient the BNO055 socket so that the breakout module's printed X-axis arrow points toward the **front** of the board (toward the toes side of the sensor layout). This gives:
-- IMU X+ = anterior/forward (pitch rotation axis)
-- IMU Y+ = medial-lateral (roll rotation axis)
-- IMU Z+ = up (yaw rotation axis)
+### Trace / Via Specifications
+
+- Signal traces: 0.25mm minimum width
+- Power traces: 0.5mm minimum width
+- Via diameter: 0.3mm minimum drill, 0.6mm pad
+- Ground plane: continuous on bottom layer
+- 2-layer, 1oz copper
 
 ### ESP32 Antenna Keep-Out
 
-Same as V1: no copper (traces or ground plane) within 10mm of the ESP32 antenna end. Place the ESP32 module so the antenna overhangs the board edge or has a clear zone.
+No copper (traces or ground plane) within 10mm of the ESP32 antenna end. The module should be oriented so the antenna overhangs the board edge or has a dedicated clear zone.
+
+### IMU Orientation
+
+Place the BNO055 socket so that, when a module is plugged in, its printed X-axis arrow points toward the heel/back edge of the board (or toward the front edge of the sensor layout — chosen for consistency across units). Document the chosen convention in the layout notes so firmware and the web app interpret axes correctly.
 
 ---
 
-## Firmware Notes (V2)
+## Calibration Procedure (Post-Assembly)
 
-The service UUID and characteristic UUID are **unchanged**. The BLE payload is extended from 12 to 18 bytes (old clients ignore trailing bytes; new clients parse IMU data).
+Run once per assembled board to establish per-channel force calibration:
 
-### Key Firmware Changes
+1. Power the board with no load on any sensor — record the zero-offset ADC reading per channel.
+2. Place a known weight (e.g., 20 kg plate) centered on each FlexiForce sensor — record the loaded ADC reading.
+3. Compute per-channel scale factor: `scale = known_force_N / (loaded_reading − zero_reading)`.
+4. Store scale factors in ESP32 non-volatile storage (NVS) or hardcode in firmware.
 
-```cpp
-// V2: ONE ADS1115 at 0x48, ONE BNO055 at 0x28
-Adafruit_ADS1115 ads;
-Adafruit_BNO055 imu = Adafruit_BNO055(55, 0x28, &Wire);
-
-struct __attribute__((packed)) SensorDataV2 {
-  uint16_t left_heel;
-  uint16_t left_ball;   // 0 in 4-sensor config
-  uint16_t left_toe;
-  uint16_t right_heel;
-  uint16_t right_ball;  // 0 in 4-sensor config
-  uint16_t right_toe;
-  int16_t pitch_cdeg;   // 0.01° units
-  int16_t roll_cdeg;    // 0.01° units
-  int16_t yaw_cdeg;     // 0.01° units
-};  // 18 bytes
-
-void setup() {
-  Wire.begin(21, 22);  // I2C SDA=GPIO21, SCL=GPIO22
-  ads.begin(0x48, &Wire);
-  ads.setGain(GAIN_ONE);  // +/-4.096V range for 0-3.3V op-amp output
-
-  if (imu.begin()) {
-    imu.setExtCrystalUse(true);  // use external 32kHz crystal on breakout
-  } else {
-    Serial.println("BNO055 not found — force-only mode");
-  }
-  // ... BLE setup unchanged
-}
-
-void loop() {
-  if (deviceConnected) {
-    SensorDataV2 data;
-    data.left_heel  = ads.readADC_SingleEnded(0);
-    data.left_ball  = 0;
-    data.left_toe   = ads.readADC_SingleEnded(1);
-    data.right_heel = ads.readADC_SingleEnded(2);
-    data.right_ball = 0;
-    data.right_toe  = ads.readADC_SingleEnded(3);
-
-    sensors_event_t euler;
-    imu.getEvent(&euler, Adafruit_BNO055::VECTOR_EULER);
-    data.pitch_cdeg = (int16_t)(euler.orientation.z * 100);
-    data.roll_cdeg  = (int16_t)(euler.orientation.y * 100);
-    data.yaw_cdeg   = (int16_t)(euler.orientation.x * 100);
-
-    pCharacteristic->setValue((uint8_t*)&data, sizeof(data));
-    pCharacteristic->notify();
-    delay(20);  // 50Hz
-  }
-  // ... disconnect handling unchanged
-}
-```
-
-### Calibration Procedure (Post-Assembly)
-
-1. Power board with no load on sensors → record zero-offset reading per channel
-2. Place known weight (e.g., 20kg plate) centered on each sensor → record loaded reading
-3. Compute: `scale_factor = known_force_N / (loaded_reading - zero_reading)`
-4. Store per-channel scale factors in ESP32 NVS (non-volatile storage) or hardcode in firmware
-5. **Expected with Rf=10kΩ:** ~16 ADC counts per Newton (full range 0–2000N maps to 0–32,000 counts)
+**Expected with Rf = 10 kΩ:** approximately 16 ADC counts per Newton, so the full 0–2000 N range maps to 0–32,000 counts (well within the ADS1115's 16-bit resolution).
 
 ---
 
-## Testing Checklist (V2)
+## Testing Checklist
 
 ### Power-On
 - [ ] LED1 illuminates
-- [ ] 3.3V rail measures 3.28–3.35V
-- [ ] No excessive current draw (< 100mA with no BLE connection)
+- [ ] 3.3V rail measures 3.28–3.35 V
+- [ ] Current draw <100 mA with no BLE connection
 
 ### Vref Verification
-- [ ] Measure Vref node: should be 0.55–0.60V
+- [ ] Measure Vref node: 0.55–0.60 V
 
-### Op-Amp Verification (no sensors connected)
-- [ ] MCP6004 pin 14 (VDD): 3.3V
-- [ ] MCP6004 pin 4 (VSS): 0V
-- [ ] Each op-amp output (pins 1, 7, 8, 13): ~0V (no sensor = no current = no output)
+### Op-Amp Verification (sensors disconnected)
+- [ ] MCP6004 pin 14 (VDD): 3.3 V
+- [ ] MCP6004 pin 4 (VSS): 0 V
+- [ ] Op-amp outputs (pins 1, 7, 8, 13): ~0 V with no sensor current
 
-### ADC Verification
-- [ ] I2C scanner finds 0x48 (ADS1115) AND 0x28 (BNO055)
-- [ ] With no sensors: all 4 channels read near 0
-- [ ] With sensor pressed by hand: reading increases smoothly
+### I²C / ADC Verification
+- [ ] I²C scanner finds 0x48 (ADS1115) AND 0x28 (BNO055)
+- [ ] All 4 ADC channels read near 0 with sensors disconnected
+- [ ] Channels respond smoothly when a test voltage is applied
 
 ### IMU Verification
-- [ ] BNO055 breakout module seats fully in socket
-- [ ] Board flat on table: pitch ≈ 0°, roll ≈ 0°
+- [ ] BNO055 breakout seats fully in socket
+- [ ] Board flat on bench: pitch ≈ 0°, roll ≈ 0°
 - [ ] Tilt board 45° forward: pitch reads ~45°
 - [ ] Tilt board 45° sideways: roll reads ~45°
-- [ ] Rotate board: yaw changes (absolute heading)
-- [ ] No axis conflicts (pitch change does not affect roll reading)
+- [ ] Rotate board: yaw changes smoothly (absolute heading)
+- [ ] No cross-coupling (pitch changes don't affect roll, etc.)
 
-### Sensor Verification
-- [ ] Connect FlexiForce A301 to each connector
-- [ ] Light finger press: small reading (100–500 counts)
-- [ ] Full hand press: larger reading (5,000–15,000 counts)
-- [ ] No saturation at full standing bodyweight (should read ~13,000 counts for 800N)
+### Sensor Verification (with FlexiForce connected)
+- [ ] Light finger press: small ADC reading (~100–500 counts)
+- [ ] Full hand press: larger reading (~5,000–15,000 counts)
+- [ ] Full standing bodyweight: ~13,000 counts for ~800 N — no saturation
 
 ### BLE Verification
 - [ ] Device advertises as "Rowing_Sensors"
-- [ ] Web app connects and displays live force data
-- [ ] All 4 channels respond independently
-- [ ] 50Hz data rate confirmed
+- [ ] Web app connects and displays live data for all 4 force channels and IMU
+- [ ] 50 Hz data rate confirmed
 
 ### Clinical Verification
-- [ ] Bilateral stance: Left% ≈ Right% (±5%)
-- [ ] Single-leg stance: loaded side reads ~800N (1x BW)
-- [ ] Heel raise: peak reads >1,200N (>1.5x BW) — NO SATURATION
-- [ ] Squat: peak reads >1,500N (>1.8x BW) — NO SATURATION
+- [ ] Bilateral stance: Left % ≈ Right % (±5%)
+- [ ] Single-leg stance: loaded side reads ~800 N (1× bodyweight)
+- [ ] Heel raise: peak >1,200 N (>1.5× bodyweight) — no saturation
+- [ ] Squat: peak >1,500 N (>1.8× bodyweight) — no saturation
 
 ---
 
@@ -619,42 +456,39 @@ void loop() {
 | FlexiForce Integration Guide | https://www.tekscan.com/resources/user-manual/flexiforce-sensors-integration-guide |
 | MCP6004 | https://ww1.microchip.com/downloads/en/DeviceDoc/MCP6001-1R-1U-2-4-1MHz-Low-Power-Op-Amp-DS20001733L.pdf |
 | ADS1115 | https://www.ti.com/lit/ds/symlink/ads1115.pdf |
-| BNO055 9-DOF IMU | https://cdn-shop.adafruit.com/datasheets/BST_BNO055_DS000_12.pdf |
+| BNO055 | https://cdn-shop.adafruit.com/datasheets/BST_BNO055_DS000_12.pdf |
 | Adafruit BNO055 breakout | https://www.adafruit.com/product/2472 |
 | ESP32-WROOM-32 | https://www.espressif.com/sites/default/files/documentation/esp32-wroom-32_datasheet_en.pdf |
 | CP2102N | https://www.silabs.com/documents/public/data-sheets/cp2102n-a01-datasheet.pdf |
+| AMS1117-3.3 | https://www.advanced-monolithic.com/pdf/noch/ams1117.pdf |
 
 ---
 
-## Off-Board Purchase Information
+## Dual-Mode Operation Note
 
-| Item | Part Number | Qty | Unit Price | Source |
-|---|---|---|---|---|
-| FlexiForce A301-100-8 | (Tekscan 8-pack, already ordered) | 1 pack | — | Tekscan direct |
-| Adafruit BNO055 breakout | Adafruit #2472 | 1 | ~$35 | [Adafruit](https://www.adafruit.com/product/2472) |
-| CJMCU-055 BNO055 (budget alt) | — | 1 | ~$6-10 | AliExpress / Amazon |
+The same PCB supports both rowing and balance-board modes. The sensors themselves are swapped physically (different cable harnesses plugged into J2–J5). No firmware mode switching is required — the ESP32 always reports the same 4 force channels plus IMU data, and the web application interprets the data based on which tab the user has selected.
 
-All PCB-mounted components (MCP6004, ADS1115, passives, headers) are ordered via JLCPCB PCBA assembly using the BOM table above.
-
----
-
-## Dual-Mode Usage (Rowing + Balance Board)
-
-The V2 PCB is hardware-agnostic with respect to whether the FlexiForce sensors are placed in shoe insoles (rowing mode) or on a balance board surface (balance mode). The same 4 headers accept either sensor set.
-
-| Mode | Sensor Placement | App View |
+| Operating Mode | Sensor Placement | Web App View |
 |---|---|---|
-| Rowing | FlexiForce sensors taped inside shoe insoles (heel + toe per foot) | "Rowing" tab — stroke phase detection, force curves |
-| Balance Board | FlexiForce sensors on balance board surface (at heel + toe positions per foot) | "Balance Board" tab — CoP, velocity, ellipse area, games |
+| Rowing | FlexiForce sensors inside shoe insoles (heel + toe per foot) | "Rowing" — stroke phase, force curves |
+| Balance Board | FlexiForce sensors on balance-board surface (heel + toe zones per foot) | "Balance Board" — CoP, sway, training games |
 
-**Physical swap** (~10 seconds): unplug the 4 FlexiForce sensor pigtails from the PCB headers, swap to the other sensor set, plug in.
-
-The IMU is on-board and remains active in both modes. In rowing mode, the IMU's orientation data provides context for drive/recovery timing. In balance mode, it measures board tilt (if on a rocker board) or trunk sway (if cable-extended to a chest strap).
+The IMU remains active in both modes. In rowing mode, orientation data provides context for drive/recovery timing. In balance mode, it measures board tilt (if mounted on a wobble/rocker platform) or, when the PCB is extended to a chest strap via cable, trunk sway during postural assessment.
 
 ---
 
-## Document Version
+## Deliverables Expected
 
-**V2.1** — April 2026
-**Author:** Dean Arvan
-**Changes from V1:** Complete analog front-end redesign. FSR-402 voltage dividers replaced with FlexiForce A301-100-8 op-amp conditioning. Dual ADS1115 reduced to single ADS1115. V1 A0/A1 routing defect eliminated. **Added: BNO055 9-DOF IMU for tilt/orientation sensing. Added: 2.54mm female headers for direct FlexiForce plug-in. Documented dual-mode operation (rowing + balance board).**
+1. Schematic (.kicad_sch) with clearly labeled nets
+2. PCB layout (.kicad_pcb) respecting the layout guidelines above
+3. Manufacturing Gerbers (zip)
+4. BOM in CSV format with LCSC part numbers matching the table above
+5. Pick-and-place file for PCBA
+6. 3D render / preview image of the assembled board
+7. DRC and ERC reports (clean)
+
+---
+
+**Document Version:** 1.0 (April 2026)
+**Prepared by:** Dean Arvan
+**Contact:** deanarvan@gmail.com
