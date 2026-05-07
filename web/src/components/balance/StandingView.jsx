@@ -56,22 +56,10 @@ const StandingView = ({ instantaneousData, cop, trail, live, session, onReset })
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
                     <CoPDisplay cop={cop} trail={trail} size={460} inactive={inactive} />
 
-                    {/* L/R distribution bars below CoP */}
-                    <div style={{ width: 460, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <Footprints size={14} color="#4ade80" />
-                            <div style={{ flex: 1, height: 10, background: '#1e293b', borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
-                                <div style={{ width: `${leftPct}%`, height: '100%', background: 'linear-gradient(90deg, #22c55e, #4ade80)', transition: 'width 0.15s' }} />
-                            </div>
-                            <span style={{ color: '#4ade80', fontFamily: 'monospace', fontWeight: 700, fontSize: 14, minWidth: 40, textAlign: 'right' }}>{leftPct}%</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <Footprints size={14} color="#a855f7" />
-                            <div style={{ flex: 1, height: 10, background: '#1e293b', borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
-                                <div style={{ width: `${rightPct}%`, height: '100%', background: 'linear-gradient(90deg, #9333ea, #a855f7)', transition: 'width 0.15s' }} />
-                            </div>
-                            <span style={{ color: '#a855f7', fontFamily: 'monospace', fontWeight: 700, fontSize: 14, minWidth: 40, textAlign: 'right' }}>{rightPct}%</span>
-                        </div>
+                    {/* L/R vertical distribution bars below CoP — left bar = left foot, right bar = right foot, mirrors physical reality */}
+                    <div style={{ width: 460, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, paddingTop: 4 }}>
+                        <VerticalFootBar label="Left" pct={leftPct} color="#4ade80" gradFrom="#22c55e" gradTo="#4ade80" />
+                        <VerticalFootBar label="Right" pct={rightPct} color="#a855f7" gradFrom="#9333ea" gradTo="#a855f7" />
                     </div>
                 </div>
 
@@ -83,6 +71,67 @@ const StandingView = ({ instantaneousData, cop, trail, live, session, onReset })
                     Step on board to begin
                 </div>
             )}
+        </div>
+    );
+};
+
+const VerticalFootBar = ({ label, pct, color, gradFrom, gradTo }) => {
+    const fillPct = Math.max(0, Math.min(100, pct));
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            {/* Vertical fill bar */}
+            <div style={{
+                width: '100%',
+                height: 110,
+                background: '#1e293b',
+                border: '1px solid rgba(51, 65, 85, 0.6)',
+                borderRadius: 8,
+                position: 'relative',
+                overflow: 'hidden',
+            }}>
+                {/* Fill rises from bottom */}
+                <div style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: `${fillPct}%`,
+                    background: `linear-gradient(0deg, ${gradFrom}, ${gradTo})`,
+                    transition: 'height 0.15s ease-out',
+                    boxShadow: `0 0 12px ${color}66`,
+                }} />
+                {/* 50% reference line */}
+                <div style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    bottom: '50%',
+                    height: 1,
+                    background: 'rgba(148, 163, 184, 0.4)',
+                    pointerEvents: 'none',
+                }} />
+                {/* Percentage label centered in bar */}
+                <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'white',
+                    fontFamily: 'monospace',
+                    fontWeight: 800,
+                    fontSize: 24,
+                    textShadow: '0 1px 4px rgba(0, 0, 0, 0.7)',
+                    pointerEvents: 'none',
+                }}>
+                    {fillPct}%
+                </div>
+            </div>
+            {/* Foot label below bar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color, fontSize: 12, fontWeight: 700 }}>
+                <Footprints size={14} />
+                {label}
+            </div>
         </div>
     );
 };
