@@ -15,7 +15,9 @@ export const useForceData = () => {
     const [instantaneousData, setInstantaneousData] = useState({
         leftForce: 0, rightForce: 0,
         leftRaw: { heel: 0, ball: 0, toe: 0 },
-        rightRaw: { heel: 0, ball: 0, toe: 0 }
+        rightRaw: { heel: 0, ball: 0, toe: 0 },
+        pitch: null, roll: null, yaw: null,
+        cal: null
     });
     const [strokePhase, setStrokePhase] = useState('idle');
     const [strokeCount, setStrokeCount] = useState(0);
@@ -183,6 +185,17 @@ export const useForceData = () => {
         const raw_rb = value.getUint16(8, true);
         const raw_rt = value.getUint16(10, true);
 
+        // IMU Euler tail (bytes 12–17, int16 LE centi-degrees → degrees). Length-guarded so a
+        // legacy 12-byte (force-only) packet still parses; pitch/roll/yaw are null when absent.
+        const hasIMU = value.byteLength >= 18;
+        const pitch = hasIMU ? value.getInt16(12, true) / 100 : null;
+        const roll  = hasIMU ? value.getInt16(14, true) / 100 : null;
+        const yaw   = hasIMU ? value.getInt16(16, true) / 100 : null;
+        // BNO055 calibration byte (byte 18, 2 bits each: sys/gyro/accel/mag); null on legacy <19-byte packets.
+        const calByte = value.byteLength >= 19 ? value.getUint8(18) : null;
+        const cal = calByte === null ? null
+            : { sys: (calByte >> 6) & 3, gyro: (calByte >> 4) & 3, accel: (calByte >> 2) & 3, mag: calByte & 3 };
+
         const rawValues = { lh: raw_lh, lb: raw_lb, lt: raw_lt, rh: raw_rh, rb: raw_rb, rt: raw_rt };
         const activeWarnings = [];
 
@@ -191,38 +204,32 @@ export const useForceData = () => {
             console.log(`[BLE Pkt #${packetNum}] RAW:`, JSON.stringify(rawValues));
         }
 
-        // Filter out partial Bluetooth reads
-        const zeroCount = Object.values(rawValues).filter(v => v === 0).length;
-        if (zeroCount >= 5) {
+        // Filter out only genuinely partial/garbage BLE reads — by payload length.
+        // (Do NOT drop all-zero packets: with firmware baseline subtraction an
+        //  unloaded board legitimately sends zeros. That's rest, not garbage.)
+        if (value.byteLength < 12) {
             bleFilteredCountRef.current++;
             return;
         }
 
-        // Sensor health tracking
+        // Sensor health — ADVISORY ONLY. This must NEVER zero the data.
+        // The old logic flagged any steady, high reading as "stuck" and zeroed it.
+        // That's wrong for this op-amp board: standing still on a load-bearing force
+        // sensor legitimately produces a steady high reading. We now only flag a
+        // genuinely RAILED sensor (saturated near the ADC max and not moving).
         Object.keys(rawValues).forEach(key => {
             const h = healthRef.current[key];
             h.vals.push(rawValues[key]);
             if (h.vals.length > 100) h.vals.shift();
 
             if (h.vals.length === 100) {
-                const activeCount = h.vals.filter(v => v > 50).length;
-                const activePct = activeCount / 100;
-
-                if (activePct < 0.05) {
-                    h.status = 'dead';
-                    activeWarnings.push(`Sensor ${key.toUpperCase()} is DEAD (<5% active). Excluding from CoP.`);
-                } else if (activePct < 0.50) {
-                    h.status = 'intermittent';
-                    activeWarnings.push(`Sensor ${key.toUpperCase()} is INTERMITTENT (${Math.round(activePct * 100)}% active).`);
+                const max = Math.max(...h.vals);
+                const min = Math.min(...h.vals);
+                if (max - min < 50 && min > 30000) {
+                    h.status = 'railed';
+                    activeWarnings.push(`Sensor ${key.toUpperCase()} is RAILED at ~${max} (saturated/shorted).`);
                 } else {
-                    const max = Math.max(...h.vals);
-                    const min = Math.min(...h.vals);
-                    if (max - min < 50 && max > 1000) {
-                        h.status = 'stuck';
-                        activeWarnings.push(`Sensor ${key.toUpperCase()} is STUCK at ~${max}. Recalibrate or replace.`);
-                    } else {
-                        h.status = 'ok';
-                    }
+                    h.status = 'ok';
                 }
             }
         });
@@ -231,13 +238,13 @@ export const useForceData = () => {
             setSensorWarnings(activeWarnings);
         }
 
-        // EMA smoothing
-        smoothedDataRef.current.lh = healthRef.current.lh.status === 'ok' ? (raw_lh * SMOOTHING_FACTOR) + (smoothedDataRef.current.lh * (1 - SMOOTHING_FACTOR)) : 0;
-        smoothedDataRef.current.lb = healthRef.current.lb.status === 'ok' ? (raw_lb * SMOOTHING_FACTOR) + (smoothedDataRef.current.lb * (1 - SMOOTHING_FACTOR)) : 0;
-        smoothedDataRef.current.lt = healthRef.current.lt.status === 'ok' ? (raw_lt * SMOOTHING_FACTOR) + (smoothedDataRef.current.lt * (1 - SMOOTHING_FACTOR)) : 0;
-        smoothedDataRef.current.rh = healthRef.current.rh.status === 'ok' ? (raw_rh * SMOOTHING_FACTOR) + (smoothedDataRef.current.rh * (1 - SMOOTHING_FACTOR)) : 0;
-        smoothedDataRef.current.rb = healthRef.current.rb.status === 'ok' ? (raw_rb * SMOOTHING_FACTOR) + (smoothedDataRef.current.rb * (1 - SMOOTHING_FACTOR)) : 0;
-        smoothedDataRef.current.rt = healthRef.current.rt.status === 'ok' ? (raw_rt * SMOOTHING_FACTOR) + (smoothedDataRef.current.rt * (1 - SMOOTHING_FACTOR)) : 0;
+        // EMA smoothing — always applied. Health is advisory only and never zeros data.
+        smoothedDataRef.current.lh = (raw_lh * SMOOTHING_FACTOR) + (smoothedDataRef.current.lh * (1 - SMOOTHING_FACTOR));
+        smoothedDataRef.current.lb = (raw_lb * SMOOTHING_FACTOR) + (smoothedDataRef.current.lb * (1 - SMOOTHING_FACTOR));
+        smoothedDataRef.current.lt = (raw_lt * SMOOTHING_FACTOR) + (smoothedDataRef.current.lt * (1 - SMOOTHING_FACTOR));
+        smoothedDataRef.current.rh = (raw_rh * SMOOTHING_FACTOR) + (smoothedDataRef.current.rh * (1 - SMOOTHING_FACTOR));
+        smoothedDataRef.current.rb = (raw_rb * SMOOTHING_FACTOR) + (smoothedDataRef.current.rb * (1 - SMOOTHING_FACTOR));
+        smoothedDataRef.current.rt = (raw_rt * SMOOTHING_FACTOR) + (smoothedDataRef.current.rt * (1 - SMOOTHING_FACTOR));
 
         const left_heel = Math.max(0, Math.round(smoothedDataRef.current.lh - tareOffsetsRef.current.lh));
         const left_ball = Math.max(0, Math.round(smoothedDataRef.current.lb - tareOffsetsRef.current.lb));
@@ -355,7 +362,8 @@ export const useForceData = () => {
             rightToe: Math.round(right_toe * SCALE_FACTOR),
             leftRaw: { heel: left_heel, ball: left_ball, toe: left_toe },
             rightRaw: { heel: right_heel, ball: right_ball, toe: right_toe },
-            phase: isDrivingRef.current ? 'drive' : 'recovery'
+            phase: isDrivingRef.current ? 'drive' : 'recovery',
+            pitch, roll, yaw, cal
         };
 
         // Always update instantaneous data for Balance Board mode

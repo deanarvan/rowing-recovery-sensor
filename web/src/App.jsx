@@ -502,30 +502,27 @@ function App() {
 
       {/* BALANCE BOARD MODE */}
       {activityMode === 'Balance_Board' && (
-        <section style={{ marginBottom: '24px' }}>
-          {/* Balance Board Connection Controls */}
-          <div className="glass-panel" style={{ padding: '16px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            {/* USB Serial Connect */}
+        <section style={{ marginBottom: '12px' }}>
+          {/* Balance Board Connection Controls — compact */}
+          <div className="glass-panel" style={{ padding: '8px 12px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             {!balanceBoard.isConnected && !balanceBoard.isReplaying && (
               <button
                 onClick={balanceBoard.connect}
                 style={{
-                  padding: '10px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '8px',
+                  padding: '6px 14px', borderRadius: '6px', border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '6px',
                   background: 'linear-gradient(135deg, #818cf8, #6366f1)',
-                  color: '#fff', fontWeight: 700, fontSize: '13px',
-                  boxShadow: '0 4px 20px rgba(129, 140, 248, 0.4)'
+                  color: '#fff', fontWeight: 700, fontSize: '11px',
+                  boxShadow: '0 2px 12px rgba(129, 140, 248, 0.3)'
                 }}
               >
-                <Usb size={16} /> CONNECT USB
+                <Usb size={14} /> CONNECT USB
               </button>
             )}
 
-            {/* Disconnect */}
             {balanceBoard.isConnected && (
               <button
                 onClick={async () => {
-                  // Save session CSV before disconnecting
                   const history = [...(balanceBoard.sessionHistory || [])];
                   await balanceBoard.disconnect();
                   if (history.length > 5) {
@@ -533,24 +530,23 @@ function App() {
                   }
                 }}
                 style={{
-                  padding: '10px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '8px',
+                  padding: '6px 14px', borderRadius: '6px', border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '6px',
                   background: 'linear-gradient(135deg, #64748b, #475569)',
-                  color: '#fff', fontWeight: 700, fontSize: '13px'
+                  color: '#fff', fontWeight: 700, fontSize: '11px'
                 }}
               >
-                <Usb size={16} /> DISCONNECT
+                <Usb size={14} /> DISCONNECT
               </button>
             )}
 
-            {/* Load CSV */}
             {!balanceBoard.isConnected && !balanceBoard.isReplaying && (
               <label style={{
-                padding: '10px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: '8px',
-                background: '#1e293b', color: '#94a3b8', fontWeight: 600, fontSize: '13px'
+                padding: '6px 14px', borderRadius: '6px', border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '6px',
+                background: '#1e293b', color: '#94a3b8', fontWeight: 600, fontSize: '11px'
               }}>
-                <Upload size={16} /> LOAD CSV
+                <Upload size={14} /> LOAD CSV
                 <input type="file" accept=".csv" style={{ display: 'none' }} onChange={(e) => {
                   const file = e.target.files[0];
                   if (file) {
@@ -565,45 +561,43 @@ function App() {
               </label>
             )}
 
-            {/* Status */}
-            <div style={{ fontSize: '12px', color: balanceBoard.isConnected ? '#4ade80' : balanceBoard.isReplaying ? '#818cf8' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ fontSize: '10px', color: balanceBoard.isConnected ? '#4ade80' : balanceBoard.isReplaying ? '#818cf8' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <div style={{
-                width: '8px', height: '8px', borderRadius: '50%',
+                width: '6px', height: '6px', borderRadius: '50%',
                 background: balanceBoard.isConnected ? '#4ade80' : balanceBoard.isReplaying ? '#818cf8' : '#475569',
-                boxShadow: balanceBoard.isConnected ? '0 0 8px #4ade80' : 'none'
+                boxShadow: balanceBoard.isConnected ? '0 0 6px #4ade80' : 'none'
               }} />
-              {balanceBoard.status === 'connected' && 'Live — USB Serial'}
-              {balanceBoard.status === 'replaying' && `Replaying CSV — ${Math.round(balanceBoard.replayProgress * 100)}%`}
+              {balanceBoard.status === 'connected' && 'Live — USB'}
+              {balanceBoard.status === 'replaying' && `CSV — ${Math.round(balanceBoard.replayProgress * 100)}%`}
               {balanceBoard.status === 'connecting' && 'Connecting...'}
-              {balanceBoard.status === 'disconnected' && balanceBoard.sessionHistory.length > 0 && `Session: ${balanceBoard.sessionHistory.length} samples`}
-              {balanceBoard.status === 'disconnected' && balanceBoard.sessionHistory.length === 0 && 'No board connected'}
+              {balanceBoard.status === 'disconnected' && balanceBoard.sessionHistory.length > 0 && `${balanceBoard.sessionHistory.length} samples`}
+              {balanceBoard.status === 'disconnected' && balanceBoard.sessionHistory.length === 0 && 'No board'}
               {balanceBoard.status === 'error' && `Error: ${balanceBoard.errorMsg}`}
             </div>
 
-            {/* Sensor Remap (collapsible) */}
             <div style={{ marginLeft: 'auto', position: 'relative' }}>
               <details style={{ position: 'relative' }}>
-                <summary style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: '#94a3b8', fontSize: '12px', listStyle: 'none' }}>
-                  <Settings2 size={14} /> Sensor Map
+                <summary style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', color: '#94a3b8', fontSize: '10px', listStyle: 'none' }}>
+                  <Settings2 size={12} /> Map
                 </summary>
                 <div style={{
                   position: 'absolute', right: 0, top: '100%', background: '#1e293b', border: '1px solid #334155',
-                  borderRadius: '8px', padding: '12px', zIndex: 50, minWidth: '200px', marginTop: '4px'
+                  borderRadius: '8px', padding: '10px', zIndex: 50, minWidth: '180px', marginTop: '4px'
                 }}>
                   {['fl', 'fr', 'rl', 'rr'].map(csvCol => {
-                    const names = { fl: 'Front Left', fr: 'Front Right', rl: 'Rear Left', rr: 'Rear Right' };
+                    const names = { fl: 'FL', fr: 'FR', rl: 'RL', rr: 'RR' };
                     return (
-                      <div key={csvCol} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
-                        <span style={{ fontSize: '12px', color: '#cbd5e1' }}>{names[csvCol]} →</span>
+                      <div key={csvCol} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0' }}>
+                        <span style={{ fontSize: '11px', color: '#cbd5e1' }}>{names[csvCol]} →</span>
                         <select
                           value={balanceBoard.sensorMap[csvCol]}
                           onChange={(e) => balanceBoard.setSensorMap(prev => ({ ...prev, [csvCol]: e.target.value }))}
-                          style={{ background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155', borderRadius: '4px', padding: '2px 4px', fontSize: '11px' }}
+                          style={{ background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155', borderRadius: '4px', padding: '2px 4px', fontSize: '10px' }}
                         >
-                          <option value="fl">Front Left</option>
-                          <option value="fr">Front Right</option>
-                          <option value="rl">Rear Left</option>
-                          <option value="rr">Rear Right</option>
+                          <option value="fl">FL</option>
+                          <option value="fr">FR</option>
+                          <option value="rl">RL</option>
+                          <option value="rr">RR</option>
                         </select>
                       </div>
                     );
@@ -613,37 +607,38 @@ function App() {
             </div>
           </div>
 
-          {/* Exercise Mode — BSI display + timed exercise modes */}
+          {/* Exercise Mode — BSI gauge + exercise cards */}
           <ExerciseMode
             balanceBoard={balanceBoard}
+            liveSensors={liveSensors}
             onExportSession={(folder, data, bsiData, copTrace) => {
               exportExerciseSessionCSV(folder, data, bsiData, copTrace, Date.now(), saveDirectoryRef.current);
             }}
           />
 
-          {/* Use balance board data when available, otherwise fall back to BLE/sim */}
-          <BalanceBoardView
-            instantaneousData={
-              (balanceBoard.isConnected || balanceBoard.isReplaying || balanceBoard.sessionHistory.length > 0)
-                ? balanceBoard.instantaneousData
-                : activeSource.instantaneousData
-            }
-          />
+          {/* Foot panels + CoP target */}
+          <div style={{ marginTop: '8px' }}>
+            <BalanceBoardView
+              instantaneousData={
+                (balanceBoard.isConnected || balanceBoard.isReplaying || balanceBoard.sessionHistory.length > 0)
+                  ? balanceBoard.instantaneousData
+                  : activeSource.instantaneousData
+              }
+            />
+          </div>
 
-          {/* Balance Board Time Series (only when balance board has data) */}
+          {/* Balance History — compact */}
           {balanceBoard.sessionHistory.length > 5 && (
-            <div className="glass-panel" style={{ padding: '20px', marginTop: '16px' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: '#e2e8f0' }}>Balance History</h3>
-              <ResponsiveContainer width="100%" height={200}>
+            <div className="glass-panel" style={{ padding: '8px 12px', marginTop: '8px' }}>
+              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, marginBottom: '4px' }}>Balance History</div>
+              <ResponsiveContainer width="100%" height={100}>
                 <LineChart data={balanceBoard.sessionHistory.slice(-200)}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis dataKey="elapsed" tick={{ fill: '#64748b', fontSize: 10 }} tickFormatter={v => typeof v === 'number' ? v.toFixed(0) + 's' : ''} />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 10 }} />
-                  <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} />
-                  <ReferenceLine y={0} stroke="#334155" />
-                  <Line type="monotone" dataKey="leftForce" stroke="#4ade80" dot={false} strokeWidth={1.5} name="Left Total" />
-                  <Line type="monotone" dataKey="rightForce" stroke="#a855f7" dot={false} strokeWidth={1.5} name="Right Total" />
-                  <Legend />
+                  <XAxis dataKey="elapsed" tick={{ fill: '#64748b', fontSize: 9 }} tickFormatter={v => typeof v === 'number' ? v.toFixed(0) + 's' : ''} />
+                  <YAxis tick={{ fill: '#64748b', fontSize: 9 }} width={30} />
+                  <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '6px', fontSize: '10px' }} />
+                  <Line type="monotone" dataKey="leftForce" stroke="#4ade80" dot={false} strokeWidth={1.5} name="L" />
+                  <Line type="monotone" dataKey="rightForce" stroke="#a855f7" dot={false} strokeWidth={1.5} name="R" />
                 </LineChart>
               </ResponsiveContainer>
             </div>

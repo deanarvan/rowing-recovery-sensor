@@ -39,7 +39,7 @@ const EXERCISE_MODES = [
   },
 ];
 
-const ExerciseMode = ({ balanceBoard, onExportSession }) => {
+const ExerciseMode = ({ balanceBoard, liveSensors, onExportSession }) => {
   const [selectedMode, setSelectedMode] = useState(null);
   const [exerciseState, setExerciseState] = useState('idle');
   const [timeRemaining, setTimeRemaining] = useState(0);
@@ -79,8 +79,11 @@ const ExerciseMode = ({ balanceBoard, onExportSession }) => {
   const holdFrontPctRef = useRef([]);
   const bsiCheckFrontPctRef = useRef([]);
 
-  // Compute real-time values from balance board data
-  const data = balanceBoard.instantaneousData;
+  // Accept data from either USB balance board or BLE sensors
+  const isAnyConnected = balanceBoard.isConnected || balanceBoard.isReplaying || (liveSensors && liveSensors.isConnected);
+  const data = balanceBoard.isConnected || balanceBoard.isReplaying
+    ? balanceBoard.instantaneousData
+    : (liveSensors && liveSensors.isConnected ? liveSensors.instantaneousData : balanceBoard.instantaneousData);
   const left = data?.leftForce || 0;
   const right = data?.rightForce || 0;
   const total = left + right;
@@ -90,10 +93,23 @@ const ExerciseMode = ({ balanceBoard, onExportSession }) => {
   const dominantSide = left > right ? 'LEFT' : right > left ? 'RIGHT' : 'EVEN';
 
   // Compute front/back percentage for AP axis
+  // USB balance board: raw.fl/fr (front) vs raw.rl/rr (rear)
+  // BLE insoles: toe+ball (front) vs heel (rear)
   const raw = data?.raw || {};
-  const frontForce = (raw.fl || 0) + (raw.fr || 0);
-  const rearForce = (raw.rl || 0) + (raw.rr || 0);
-  const frontPct = total > 0 ? (frontForce / total) * 100 : 50;
+  let frontForce, rearForce;
+  if (raw.fl !== undefined || raw.fr !== undefined) {
+    frontForce = (raw.fl || 0) + (raw.fr || 0);
+    rearForce = (raw.rl || 0) + (raw.rr || 0);
+  } else if (data?.leftRaw || data?.rightRaw) {
+    const lr = data.leftRaw || {};
+    const rr = data.rightRaw || {};
+    frontForce = (lr.toe || 0) + (lr.ball || 0) + (rr.toe || 0) + (rr.ball || 0);
+    rearForce = (lr.heel || 0) + (rr.heel || 0);
+  } else {
+    frontForce = 0;
+    rearForce = 0;
+  }
+  const frontPct = total > 0 ? (frontForce / (frontForce + rearForce || 1)) * 100 : 50;
 
   // Posterior shift alert threshold (below 40% = significant posterior shift)
   const POSTERIOR_SHIFT_THRESHOLD = 40;
@@ -367,117 +383,109 @@ const ExerciseMode = ({ balanceBoard, onExportSession }) => {
   const currentPhase = selectedMode?.phases ? selectedMode.phases[currentPhaseIndex] : null;
   const isPhased = !!selectedMode?.phases;
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+  // BSI value for display
+  const displayBSI = exerciseState === 'complete' ? (sessionAvgBSI ?? 0) : currentBSI;
+  const displayColor = bsiColor(displayBSI);
 
-      {/* ─── BSI Display ─── */}
-      {(balanceBoard.isConnected || exerciseState !== 'idle') && (
+  // SVG ring gauge helper
+  const bsiRingPct = Math.min(displayBSI / 25, 1); // 25% = full ring
+  const ringRadius = 38;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringOffset = ringCircumference * (1 - bsiRingPct);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+
+      {/* ─── BSI Gauge + L/R + Exercise Cards — all in one row ─── */}
+      {(isAnyConnected || exerciseState !== 'idle') && (
         <div className="glass-panel" style={{
-          padding: '20px 24px',
+          padding: '10px 14px',
           display: 'flex',
-          justifyContent: 'space-between',
           alignItems: 'center',
-          flexWrap: 'wrap',
           gap: '16px',
         }}>
-          <div style={{ textAlign: 'center', flex: '1 1 200px', minWidth: '200px' }}>
-            <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px' }}>
-              Bilateral Symmetry Index
-            </div>
+          {/* BSI Ring Gauge */}
+          <div style={{ position: 'relative', width: '90px', height: '90px', flexShrink: 0 }}>
+            <svg width="90" height="90" viewBox="0 0 90 90">
+              <circle cx="45" cy="45" r={ringRadius} fill="none" stroke="#1e293b" strokeWidth="6" />
+              <circle cx="45" cy="45" r={ringRadius} fill="none" stroke={displayColor} strokeWidth="6"
+                strokeDasharray={ringCircumference} strokeDashoffset={ringOffset}
+                strokeLinecap="round" transform="rotate(-90 45 45)"
+                style={{ transition: 'stroke-dashoffset 0.3s ease, stroke 0.3s ease' }} />
+            </svg>
             <div style={{
-              fontSize: '56px',
-              fontWeight: 900,
-              fontFamily: 'monospace',
-              color: exerciseState === 'complete'
-                ? bsiColor(sessionAvgBSI || 0)
-                : bsiColor(currentBSI),
-              lineHeight: 1,
+              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
             }}>
-              {exerciseState === 'complete'
-                ? (sessionAvgBSI !== null ? sessionAvgBSI.toFixed(1) : '—')
-                : currentBSI.toFixed(1)
-              }%
-            </div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-              {exerciseState === 'complete'
-                ? 'Session Average'
-                : (total > 20 ? `Bias: ${dominantSide}` : 'Step on board')
-              }
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '32px', flex: '0 0 auto' }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '11px', color: '#4ade80', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Left</div>
-              <div style={{ fontSize: '32px', fontWeight: 800, fontFamily: 'monospace', color: '#4ade80' }}>
-                {exerciseState === 'complete'
-                  ? (sessionAvgLeftPct !== null ? sessionAvgLeftPct.toFixed(1) : '—')
-                  : leftPct.toFixed(1)
-                }%
+              <div style={{ fontSize: '22px', fontWeight: 900, fontFamily: 'monospace', color: displayColor, lineHeight: 1 }}>
+                {displayBSI.toFixed(1)}%
               </div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '11px', color: '#a855f7', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Right</div>
-              <div style={{ fontSize: '32px', fontWeight: 800, fontFamily: 'monospace', color: '#a855f7' }}>
-                {exerciseState === 'complete'
-                  ? (sessionAvgRightPct !== null ? sessionAvgRightPct.toFixed(1) : '—')
-                  : rightPct.toFixed(1)
-                }%
+              <div style={{ fontSize: '8px', color: '#64748b', marginTop: '2px', textTransform: 'uppercase' }}>
+                {exerciseState === 'complete' ? 'Avg BSI' : (total > 20 ? dominantSide : 'BSI')}
               </div>
             </div>
           </div>
 
-          {/* A/P indicator (live) */}
-          {exerciseState === 'recording' && total > 20 && (
-            <div style={{ textAlign: 'center', flex: '0 0 auto' }}>
-              <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Front</div>
-              <div style={{
-                fontSize: '24px', fontWeight: 800, fontFamily: 'monospace',
-                color: frontPct < POSTERIOR_SHIFT_THRESHOLD ? '#ef4444' : '#64748b',
-              }}>
-                {frontPct.toFixed(1)}%
-              </div>
+          {/* L / R percentages */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+              <span style={{ fontSize: '9px', color: '#4ade80', fontWeight: 700, width: '14px' }}>L</span>
+              <span style={{ fontSize: '18px', fontWeight: 800, fontFamily: 'monospace', color: '#4ade80' }}>
+                {(exerciseState === 'complete' ? sessionAvgLeftPct : leftPct)?.toFixed(1) ?? '—'}%
+              </span>
             </div>
-          )}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+              <span style={{ fontSize: '9px', color: '#a855f7', fontWeight: 700, width: '14px' }}>R</span>
+              <span style={{ fontSize: '18px', fontWeight: 800, fontFamily: 'monospace', color: '#a855f7' }}>
+                {(exerciseState === 'complete' ? sessionAvgRightPct : rightPct)?.toFixed(1) ?? '—'}%
+              </span>
+            </div>
+            {exerciseState === 'recording' && total > 20 && (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                <span style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, width: '14px' }}>AP</span>
+                <span style={{
+                  fontSize: '14px', fontWeight: 800, fontFamily: 'monospace',
+                  color: frontPct < POSTERIOR_SHIFT_THRESHOLD ? '#ef4444' : '#64748b',
+                }}>{frontPct.toFixed(0)}%</span>
+              </div>
+            )}
+          </div>
 
-          <div style={{ textAlign: 'right', fontSize: '10px', color: '#64748b', lineHeight: 1.6, flex: '0 0 auto' }}>
-            <div><span style={{ color: '#4ade80' }}>●</span> &lt;10% — Return to sport</div>
-            <div><span style={{ color: '#fbbf24' }}>●</span> 10–15% — Acceptable</div>
-            <div><span style={{ color: '#ef4444' }}>●</span> &gt;15% — Needs work</div>
+          {/* Color legend — compact vertical dots */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', fontSize: '9px', color: '#64748b', flexShrink: 0 }}>
+            <div><span style={{ color: '#4ade80' }}>●</span> &lt;10%</div>
+            <div><span style={{ color: '#fbbf24' }}>●</span> 10–15%</div>
+            <div><span style={{ color: '#ef4444' }}>●</span> &gt;15%</div>
           </div>
         </div>
       )}
 
-      {/* ─── Posterior Shift Alert ─── Live during recording */}
+      {/* ─── Posterior Shift Alert ─── compact banner */}
       {exerciseState === 'recording' && posteriorShiftAlert && (
         <motion.div
-          initial={{ opacity: 0, y: -10 }}
+          initial={{ opacity: 0, y: -5 }}
           animate={{ opacity: 1, y: 0 }}
           style={{
-            padding: '12px 20px',
+            padding: '6px 12px',
             background: 'rgba(239, 68, 68, 0.15)',
             border: '1px solid #ef4444',
-            borderRadius: '10px',
+            borderRadius: '8px',
             display: 'flex',
             alignItems: 'center',
-            gap: '12px',
+            gap: '8px',
+            fontSize: '11px',
           }}
         >
-          <AlertTriangle size={20} style={{ color: '#ef4444', flexShrink: 0 }} />
-          <div>
-            <div style={{ fontSize: '13px', fontWeight: 700, color: '#ef4444' }}>
-              Posterior Weight Shift Detected
-            </div>
-            <div style={{ fontSize: '11px', color: '#f87171', marginTop: '2px' }}>
-              Front load {frontPct.toFixed(1)}% (threshold: {POSTERIOR_SHIFT_THRESHOLD}%) — possible Achilles compensation pattern. Try shifting weight forward.
-            </div>
-          </div>
+          <AlertTriangle size={14} style={{ color: '#ef4444', flexShrink: 0 }} />
+          <span style={{ color: '#f87171', fontWeight: 600 }}>
+            Posterior shift — front {frontPct.toFixed(0)}% (thresh {POSTERIOR_SHIFT_THRESHOLD}%) — shift weight forward
+          </span>
         </motion.div>
       )}
 
-      {/* ─── Mode Selection Cards ─── */}
+      {/* ─── Mode Selection Cards ─── compact strip */}
       {(exerciseState === 'idle' || exerciseState === 'complete') && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
           {EXERCISE_MODES.map(mode => {
             const Icon = mode.icon;
             const isSelected = selectedMode?.id === mode.id;
@@ -488,36 +496,27 @@ const ExerciseMode = ({ balanceBoard, onExportSession }) => {
               <button
                 key={mode.id}
                 onClick={() => {
-                  if (!balanceBoard.isConnected) return;
+                  if (!isAnyConnected) return;
                   startExercise(mode);
                 }}
-                disabled={!balanceBoard.isConnected}
+                disabled={!isAnyConnected}
                 style={{
-                  padding: '20px',
-                  borderRadius: '12px',
+                  flex: 1,
+                  padding: '10px 12px',
+                  borderRadius: '10px',
                   border: isSelected ? `2px solid ${mode.color}` : '1px solid #334155',
                   background: isSelected ? `${mode.color}15` : 'rgba(30, 41, 59, 0.5)',
-                  cursor: balanceBoard.isConnected ? 'pointer' : 'not-allowed',
-                  opacity: balanceBoard.isConnected ? 1 : 0.4,
-                  textAlign: 'left',
+                  cursor: isAnyConnected ? 'pointer' : 'not-allowed',
+                  opacity: isAnyConnected ? 1 : 0.4,
+                  textAlign: 'center',
                   transition: 'all 0.2s ease',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                  <Icon size={20} style={{ color: mode.color }} />
-                  <span style={{ fontSize: '15px', fontWeight: 700, color: '#e2e8f0' }}>{mode.name}</span>
-                </div>
-                <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8', lineHeight: 1.4 }}>
-                  {mode.description}
-                </p>
-                <div style={{ marginTop: '10px', fontSize: '12px', color: mode.color, fontWeight: 600 }}>
-                  <Timer size={12} style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                <Icon size={18} style={{ color: mode.color, marginBottom: '4px' }} />
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#e2e8f0' }}>{mode.name}</div>
+                <div style={{ fontSize: '10px', color: mode.color, fontWeight: 600, marginTop: '3px' }}>
                   {totalDuration}s
-                  {mode.phases && (
-                    <span style={{ color: '#64748b', fontWeight: 400, marginLeft: '6px' }}>
-                      ({mode.phases.length} phases)
-                    </span>
-                  )}
+                  {mode.phases && <span style={{ color: '#64748b' }}> · {mode.phases.length}ph</span>}
                 </div>
               </button>
             );
@@ -529,14 +528,14 @@ const ExerciseMode = ({ balanceBoard, onExportSession }) => {
       {exerciseState === 'countdown' && (
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          padding: '48px', background: 'rgba(15, 23, 42, 0.9)', borderRadius: '16px',
+          padding: '24px', background: 'rgba(15, 23, 42, 0.9)', borderRadius: '12px',
           border: '1px solid #334155',
         }}>
-          <div style={{ fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' }}>
+          <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px' }}>
             Get Ready — {selectedMode?.name}
           </div>
           {isPhased && (
-            <div style={{ fontSize: '11px', color: selectedMode?.color, marginBottom: '4px' }}>
+            <div style={{ fontSize: '10px', color: selectedMode?.color, marginBottom: '2px' }}>
               First: {selectedMode.phases[0].instruction}
             </div>
           )}
@@ -544,13 +543,13 @@ const ExerciseMode = ({ balanceBoard, onExportSession }) => {
             key={countdownValue}
             initial={{ scale: 0.5, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            style={{ fontSize: '96px', fontWeight: 900, color: selectedMode?.color, fontFamily: 'monospace' }}
+            style={{ fontSize: '64px', fontWeight: 900, color: selectedMode?.color, fontFamily: 'monospace' }}
           >
             {countdownValue}
           </motion.div>
           <button onClick={stopExercise} style={{
-            marginTop: '16px', padding: '8px 20px', borderRadius: '8px', border: '1px solid #475569',
-            background: 'transparent', color: '#94a3b8', fontSize: '12px', cursor: 'pointer'
+            marginTop: '8px', padding: '6px 16px', borderRadius: '8px', border: '1px solid #475569',
+            background: 'transparent', color: '#94a3b8', fontSize: '11px', cursor: 'pointer'
           }}>
             Cancel
           </button>
@@ -559,89 +558,72 @@ const ExerciseMode = ({ balanceBoard, onExportSession }) => {
 
       {/* ─── Recording Timer Bar ─── */}
       {exerciseState === 'recording' && selectedMode && (
-        <div className="glass-panel" style={{ padding: '16px 24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div className="glass-panel" style={{ padding: '8px 14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{
-                width: '10px', height: '10px', borderRadius: '50%',
+                width: '8px', height: '8px', borderRadius: '50%',
                 background: currentPhase && !currentPhase.recording ? '#fbbf24' : '#ef4444',
                 animation: 'pulse-red 1.5s infinite',
               }} />
-              <span style={{ fontSize: '14px', fontWeight: 700, color: '#e2e8f0' }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: '#e2e8f0' }}>
                 {selectedMode.name}
               </span>
-              <span style={{ fontSize: '11px', color: '#64748b' }}>
-                {sampleCount} samples
+              <span style={{ fontSize: '10px', color: '#64748b' }}>
+                {sampleCount}
               </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span style={{
-                fontSize: '36px', fontWeight: 900, fontFamily: 'monospace',
+                fontSize: '24px', fontWeight: 900, fontFamily: 'monospace',
                 color: timeRemaining <= 5 ? '#ef4444' : selectedMode.color,
               }}>
                 {isPhased ? phaseTimeRemaining : timeRemaining}s
               </span>
               <button onClick={stopExercise} style={{
-                padding: '8px 16px', borderRadius: '8px', border: 'none',
+                padding: '5px 12px', borderRadius: '6px', border: 'none',
                 background: 'linear-gradient(135deg, #64748b, #475569)',
-                color: '#fff', fontWeight: 700, fontSize: '12px', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: '6px',
+                color: '#fff', fontWeight: 700, fontSize: '11px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '4px',
               }}>
-                <Square size={14} /> STOP
+                <Square size={12} /> STOP
               </button>
             </div>
           </div>
 
-          {/* Phase instruction banner for multi-phase modes */}
+          {/* Phase instruction — inline compact */}
           {isPhased && currentPhase && (
             <div style={{
-              padding: '10px 16px',
-              marginBottom: '10px',
-              borderRadius: '8px',
-              background: currentPhase.recording
-                ? `${selectedMode.color}20`
-                : 'rgba(251, 191, 36, 0.1)',
+              padding: '5px 10px', marginBottom: '6px', borderRadius: '6px',
+              background: currentPhase.recording ? `${selectedMode.color}20` : 'rgba(251, 191, 36, 0.1)',
               border: `1px solid ${currentPhase.recording ? selectedMode.color : '#fbbf2480'}`,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px',
             }}>
               <div>
-                <span style={{
-                  fontSize: '13px', fontWeight: 700,
-                  color: currentPhase.recording ? selectedMode.color : '#fbbf24',
-                }}>
+                <span style={{ fontWeight: 700, color: currentPhase.recording ? selectedMode.color : '#fbbf24' }}>
                   {currentPhase.name}
                 </span>
-                <span style={{ fontSize: '12px', color: '#94a3b8', marginLeft: '12px' }}>
-                  {currentPhase.instruction}
-                </span>
+                <span style={{ color: '#94a3b8', marginLeft: '8px' }}>{currentPhase.instruction}</span>
               </div>
-              <div style={{ fontSize: '10px', color: '#64748b' }}>
-                Phase {currentPhaseIndex + 1}/{selectedMode.phases.length}
-                {!currentPhase.recording && ' (not recording)'}
-              </div>
+              <span style={{ color: '#64748b', fontSize: '10px' }}>
+                {currentPhaseIndex + 1}/{selectedMode.phases.length}
+              </span>
             </div>
           )}
 
           {/* Phase progress dots */}
           {isPhased && (
-            <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', gap: '3px', marginBottom: '4px' }}>
               {selectedMode.phases.map((phase, idx) => {
                 const phaseTotal = selectedMode.phases.reduce((s, p) => s + p.duration, 0);
                 const widthPct = (phase.duration / phaseTotal) * 100;
                 let bg = '#1e293b';
                 if (idx < currentPhaseIndex) bg = selectedMode.color;
-                else if (idx === currentPhaseIndex) {
-                  bg = phase.recording ? selectedMode.color : '#fbbf24';
-                }
+                else if (idx === currentPhaseIndex) bg = phase.recording ? selectedMode.color : '#fbbf24';
                 return (
                   <div key={idx} style={{
-                    height: '6px',
-                    width: `${widthPct}%`,
-                    borderRadius: '3px',
-                    background: bg,
-                    opacity: idx <= currentPhaseIndex ? 1 : 0.3,
+                    height: '4px', width: `${widthPct}%`, borderRadius: '2px',
+                    background: bg, opacity: idx <= currentPhaseIndex ? 1 : 0.3,
                     transition: 'all 0.3s ease',
                   }} />
                 );
@@ -649,9 +631,9 @@ const ExerciseMode = ({ balanceBoard, onExportSession }) => {
             </div>
           )}
 
-          {/* Overall progress bar (simple modes) */}
+          {/* Overall progress bar */}
           {!isPhased && (
-            <div style={{ height: '4px', background: '#1e293b', borderRadius: '2px', overflow: 'hidden' }}>
+            <div style={{ height: '3px', background: '#1e293b', borderRadius: '2px', overflow: 'hidden' }}>
               <motion.div
                 animate={{ width: `${((selectedMode.duration - timeRemaining) / selectedMode.duration) * 100}%` }}
                 transition={{ duration: 0.5, ease: 'linear' }}
@@ -664,150 +646,126 @@ const ExerciseMode = ({ balanceBoard, onExportSession }) => {
 
       {/* ─── Session Complete Summary ─── */}
       {exerciseState === 'complete' && sessionAvgBSI !== null && (
-        <div className="glass-panel" style={{ padding: '20px', border: `1px solid ${selectedMode?.color || '#334155'}` }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ margin: 0, fontSize: '16px', color: '#e2e8f0' }}>
-              Session Complete — {selectedMode?.name}
-            </h3>
+        <div className="glass-panel" style={{ padding: '10px 14px', border: `1px solid ${selectedMode?.color || '#334155'}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: '#e2e8f0' }}>
+              Complete — {selectedMode?.name}
+            </span>
             <button onClick={resetExercise} style={{
-              padding: '8px 16px', borderRadius: '8px', border: '1px solid #475569',
-              background: 'transparent', color: '#e2e8f0', fontSize: '12px', cursor: 'pointer', fontWeight: 600,
+              padding: '5px 12px', borderRadius: '6px', border: '1px solid #475569',
+              background: 'transparent', color: '#e2e8f0', fontSize: '11px', cursor: 'pointer', fontWeight: 600,
             }}>
-              NEW SESSION
+              NEW
             </button>
           </div>
 
-          {/* Row 1: Core metrics */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px' }}>
-            <div style={{ textAlign: 'center', padding: '12px', background: '#0f172a', borderRadius: '8px' }}>
-              <div style={{ fontSize: '24px', fontWeight: 800, fontFamily: 'monospace', color: bsiColor(sessionAvgBSI) }}>
+          {/* Row 1: Core metrics — compact */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px' }}>
+            <div style={{ textAlign: 'center', padding: '6px', background: '#0f172a', borderRadius: '6px' }}>
+              <div style={{ fontSize: '16px', fontWeight: 800, fontFamily: 'monospace', color: bsiColor(sessionAvgBSI) }}>
                 {sessionAvgBSI.toFixed(1)}%
               </div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>Avg BSI</div>
+              <div style={{ fontSize: '9px', color: '#94a3b8' }}>BSI</div>
             </div>
-            <div style={{ textAlign: 'center', padding: '12px', background: '#0f172a', borderRadius: '8px' }}>
-              <div style={{ fontSize: '24px', fontWeight: 800, fontFamily: 'monospace', color: '#4ade80' }}>
+            <div style={{ textAlign: 'center', padding: '6px', background: '#0f172a', borderRadius: '6px' }}>
+              <div style={{ fontSize: '16px', fontWeight: 800, fontFamily: 'monospace', color: '#4ade80' }}>
                 {sessionAvgLeftPct.toFixed(1)}%
               </div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>Avg Left</div>
+              <div style={{ fontSize: '9px', color: '#94a3b8' }}>Left</div>
             </div>
-            <div style={{ textAlign: 'center', padding: '12px', background: '#0f172a', borderRadius: '8px' }}>
-              <div style={{ fontSize: '24px', fontWeight: 800, fontFamily: 'monospace', color: '#a855f7' }}>
+            <div style={{ textAlign: 'center', padding: '6px', background: '#0f172a', borderRadius: '6px' }}>
+              <div style={{ fontSize: '16px', fontWeight: 800, fontFamily: 'monospace', color: '#a855f7' }}>
                 {sessionAvgRightPct.toFixed(1)}%
               </div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>Avg Right</div>
+              <div style={{ fontSize: '9px', color: '#94a3b8' }}>Right</div>
             </div>
-            <div style={{ textAlign: 'center', padding: '12px', background: '#0f172a', borderRadius: '8px' }}>
-              <div style={{ fontSize: '24px', fontWeight: 800, fontFamily: 'monospace', color: '#e2e8f0' }}>
+            <div style={{ textAlign: 'center', padding: '6px', background: '#0f172a', borderRadius: '6px' }}>
+              <div style={{ fontSize: '16px', fontWeight: 800, fontFamily: 'monospace', color: '#e2e8f0' }}>
                 {sampleCount}
               </div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>Samples</div>
+              <div style={{ fontSize: '9px', color: '#94a3b8' }}>Samples</div>
             </div>
           </div>
 
-          {/* Row 2: VALD-aligned CoP metrics */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginTop: '12px' }}>
-            <div style={{ textAlign: 'center', padding: '12px', background: '#0f172a', borderRadius: '8px', border: '1px solid #1e293b' }}>
-              <div style={{ fontSize: '20px', fontWeight: 800, fontFamily: 'monospace', color: '#38bdf8' }}>
+          {/* Row 2: CoP metrics — compact */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginTop: '6px' }}>
+            <div style={{ textAlign: 'center', padding: '6px', background: '#0f172a', borderRadius: '6px', border: '1px solid #1e293b' }}>
+              <div style={{ fontSize: '14px', fontWeight: 800, fontFamily: 'monospace', color: '#38bdf8' }}>
                 {sessionCoPVelocity !== null ? sessionCoPVelocity.toFixed(2) : '—'}
               </div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>CoP Velocity (%/s)</div>
-              <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px' }}>postural correction speed</div>
+              <div style={{ fontSize: '9px', color: '#94a3b8' }}>CoP Vel (%/s)</div>
             </div>
-            <div style={{ textAlign: 'center', padding: '12px', background: '#0f172a', borderRadius: '8px', border: '1px solid #1e293b' }}>
-              <div style={{ fontSize: '20px', fontWeight: 800, fontFamily: 'monospace', color: '#f472b6' }}>
+            <div style={{ textAlign: 'center', padding: '6px', background: '#0f172a', borderRadius: '6px', border: '1px solid #1e293b' }}>
+              <div style={{ fontSize: '14px', fontWeight: 800, fontFamily: 'monospace', color: '#f472b6' }}>
                 {sessionCoPTranslation !== null ? sessionCoPTranslation.toFixed(2) : '—'}
               </div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>CoP Translation (%)</div>
-              <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px' }}>max sway range</div>
+              <div style={{ fontSize: '9px', color: '#94a3b8' }}>CoP Trans (%)</div>
             </div>
-            <div style={{ textAlign: 'center', padding: '12px', background: '#0f172a', borderRadius: '8px', border: '1px solid #1e293b' }}>
-              <div style={{ fontSize: '20px', fontWeight: 800, fontFamily: 'monospace', color: '#fbbf24' }}>
+            <div style={{ textAlign: 'center', padding: '6px', background: '#0f172a', borderRadius: '6px', border: '1px solid #1e293b' }}>
+              <div style={{ fontSize: '14px', fontWeight: 800, fontFamily: 'monospace', color: '#fbbf24' }}>
                 {sessionCoPEllipseArea !== null ? sessionCoPEllipseArea.toFixed(1) : '—'}
               </div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>CoP Ellipse Area (%²)</div>
-              <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px' }}>95% confidence sway area</div>
+              <div style={{ fontSize: '9px', color: '#94a3b8' }}>Ellipse (%²)</div>
             </div>
           </div>
 
-          {/* Row 3: Fatigue Protocol Results (only for phased modes) */}
+          {/* Row 3: Fatigue Protocol Results */}
           {isPhased && fatigueHoldBSI !== null && fatigueBsiCheckBSI !== null && (
-            <div style={{ marginTop: '16px' }}>
-              <div style={{ fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px', fontWeight: 600 }}>
-                Fatigue Response Analysis
+            <div style={{ marginTop: '6px' }}>
+              <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontWeight: 600 }}>
+                Fatigue Response
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                <div style={{ textAlign: 'center', padding: '14px', background: '#0f172a', borderRadius: '8px', border: '1px solid #818cf830' }}>
-                  <div style={{ fontSize: '22px', fontWeight: 800, fontFamily: 'monospace', color: bsiColor(fatigueHoldBSI) }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                <div style={{ textAlign: 'center', padding: '6px', background: '#0f172a', borderRadius: '6px', border: '1px solid #818cf830' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 800, fontFamily: 'monospace', color: bsiColor(fatigueHoldBSI) }}>
                     {fatigueHoldBSI.toFixed(1)}%
                   </div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>BSI During Holds</div>
-                  <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px' }}>heel rise phase avg</div>
+                  <div style={{ fontSize: '9px', color: '#94a3b8' }}>Holds</div>
                 </div>
-                <div style={{ textAlign: 'center', padding: '14px', background: '#0f172a', borderRadius: '8px', border: '1px solid #818cf830' }}>
-                  <div style={{ fontSize: '22px', fontWeight: 800, fontFamily: 'monospace', color: bsiColor(fatigueBsiCheckBSI) }}>
+                <div style={{ textAlign: 'center', padding: '6px', background: '#0f172a', borderRadius: '6px', border: '1px solid #818cf830' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 800, fontFamily: 'monospace', color: bsiColor(fatigueBsiCheckBSI) }}>
                     {fatigueBsiCheckBSI.toFixed(1)}%
                   </div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>BSI Post-Fatigue</div>
-                  <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px' }}>bilateral stance check</div>
+                  <div style={{ fontSize: '9px', color: '#94a3b8' }}>Post-Fat</div>
                 </div>
                 <div style={{
-                  textAlign: 'center', padding: '14px', borderRadius: '8px',
+                  textAlign: 'center', padding: '6px', borderRadius: '6px',
                   background: fatigueBsiDelta > 5 ? 'rgba(239, 68, 68, 0.1)' : fatigueBsiDelta > 2 ? 'rgba(251, 191, 36, 0.1)' : 'rgba(74, 222, 128, 0.1)',
                   border: `1px solid ${fatigueBsiDelta > 5 ? '#ef444480' : fatigueBsiDelta > 2 ? '#fbbf2480' : '#4ade8080'}`,
                 }}>
                   <div style={{
-                    fontSize: '22px', fontWeight: 800, fontFamily: 'monospace',
+                    fontSize: '14px', fontWeight: 800, fontFamily: 'monospace',
                     color: fatigueBsiDelta > 5 ? '#ef4444' : fatigueBsiDelta > 2 ? '#fbbf24' : '#4ade80',
                   }}>
                     {fatigueBsiDelta > 0 ? '+' : ''}{fatigueBsiDelta.toFixed(1)}%
                   </div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>BSI Delta</div>
-                  <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px' }}>
-                    {fatigueBsiDelta > 5 ? 'significant fatigue shift' : fatigueBsiDelta > 2 ? 'moderate fatigue shift' : 'minimal fatigue effect'}
-                  </div>
+                  <div style={{ fontSize: '9px', color: '#94a3b8' }}>Delta</div>
                 </div>
               </div>
 
-              {/* Front pct comparison */}
               {fatigueHoldFrontPct !== null && fatigueBsiCheckFrontPct !== null && (
                 <div style={{
-                  marginTop: '10px', padding: '10px 16px', borderRadius: '8px',
+                  marginTop: '4px', padding: '4px 10px', borderRadius: '6px',
                   background: '#0f172a', border: '1px solid #1e293b',
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px',
                 }}>
-                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                    A/P Shift: Hold avg <span style={{ color: '#e2e8f0', fontWeight: 700, fontFamily: 'monospace' }}>{fatigueHoldFrontPct.toFixed(1)}%</span> front
-                    → Post-fatigue <span style={{
+                  <span style={{ color: '#94a3b8' }}>
+                    A/P: <span style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>{fatigueHoldFrontPct.toFixed(0)}%</span>
+                    → <span style={{
                       color: fatigueBsiCheckFrontPct < POSTERIOR_SHIFT_THRESHOLD ? '#ef4444' : '#e2e8f0',
-                      fontWeight: 700, fontFamily: 'monospace',
-                    }}>{fatigueBsiCheckFrontPct.toFixed(1)}%</span> front
-                  </div>
+                      fontFamily: 'monospace',
+                    }}>{fatigueBsiCheckFrontPct.toFixed(0)}%</span>
+                  </span>
                   {fatigueBsiCheckFrontPct < fatigueHoldFrontPct - 3 && (
-                    <div style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 600 }}>
-                      ⚠ posterior shift under fatigue
-                    </div>
+                    <span style={{ color: '#f59e0b', fontWeight: 600 }}>post. shift</span>
                   )}
                 </div>
               )}
-
-              {/* Clinical interpretation */}
-              <div style={{
-                marginTop: '10px', padding: '10px 16px', borderRadius: '8px',
-                background: 'rgba(30, 41, 59, 0.5)', fontSize: '11px', color: '#64748b', lineHeight: 1.5,
-              }}>
-                {fatigueBsiDelta > 5
-                  ? 'VALD research (Sara et al. 2021): >20% peak force deficit post-endurance indicates abnormal fatigue response. Your BSI shift suggests the fatigued side is losing symmetry significantly — focus on endurance training for the weaker side.'
-                  : fatigueBsiDelta > 2
-                  ? 'Moderate fatigue-induced asymmetry shift detected. Monitor this across sessions — if the delta increases over time, endurance capacity on the weaker side may need targeted work.'
-                  : 'Minimal fatigue effect on symmetry — good endurance capacity on both sides. The calf complex is maintaining force output under fatigue.'
-                }
-              </div>
             </div>
           )}
 
-          <div style={{ marginTop: '12px', fontSize: '11px', color: '#64748b', textAlign: 'center' }}>
-            Data saved to Balance_Board_2/{selectedMode?.folder}/
+          <div style={{ marginTop: '6px', fontSize: '10px', color: '#64748b', textAlign: 'center' }}>
+            Saved to Balance_Board_2/{selectedMode?.folder}/
           </div>
         </div>
       )}

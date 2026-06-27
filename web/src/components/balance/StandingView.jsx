@@ -7,15 +7,24 @@
 import React, { useState } from 'react';
 import CoPDisplay from './CoPDisplay';
 import CoPMetrics from './CoPMetrics';
+import LeanTrainer from './LeanTrainer';
+import CalibrationHelper from './CalibrationHelper';
+import { isActiveStance } from '../../hooks/useCoPMetrics';
 import { Footprints, Eye, EyeOff } from 'lucide-react';
 
 const StandingView = ({ instantaneousData, cop, trail, live, session, onReset }) => {
     const [challenge, setChallenge] = useState('eyes-open');
-    const data = instantaneousData || { leftForce: 0, rightForce: 0 };
-    const total = data.leftForce + data.rightForce;
-    const leftPct = total > 0 ? Math.round((data.leftForce / total) * 100) : 50;
-    const rightPct = total > 0 ? Math.round((data.rightForce / total) * 100) : 50;
-    const inactive = total < 20;
+    const data = instantaneousData || {};
+    // L/R bars and the active gate run off the raw ADC sums (full resolution),
+    // matching useCoPMetrics — not the ×0.005 rounded single-digit force.
+    const lr = data.leftRaw || { heel: 0, ball: 0, toe: 0 };
+    const rr = data.rightRaw || { heel: 0, ball: 0, toe: 0 };
+    const rawLeft = lr.heel + lr.ball + lr.toe;
+    const rawRight = rr.heel + rr.ball + rr.toe;
+    const rawTotal = rawLeft + rawRight;
+    const leftPct = rawTotal > 0 ? Math.round((rawLeft / rawTotal) * 100) : 50;
+    const rightPct = rawTotal > 0 ? Math.round((rawRight / rawTotal) * 100) : 50;
+    const inactive = !isActiveStance(data);
 
     return (
         <div>
@@ -50,6 +59,12 @@ const StandingView = ({ instantaneousData, cop, trail, live, session, onReset })
                     );
                 })}
             </div>
+
+            {/* IMU board-roll L/R lean — compact bar above the CoP so both are visible together */}
+            <LeanTrainer roll={data.roll} />
+
+            {/* BNO055 calibration status + guided dance (collapsed by default) */}
+            <CalibrationHelper cal={data.cal} />
 
             {/* Main layout: CoP center, metrics right */}
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 280px', gap: 16, alignItems: 'center', justifyContent: 'center' }}>

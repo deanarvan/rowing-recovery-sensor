@@ -442,7 +442,8 @@ export async function autoExportCSV(data, timestamp = Date.now(), directoryHandl
     const headers = [
         'Time(s)', 'Position(%)', 'Total_Force', 'Left_Force', 'Right_Force',
         'L_Heel', 'L_Ball', 'L_Toe', 'R_Heel', 'R_Ball', 'R_Toe',
-        'Phase', 'Total_Force_N', 'Left_Force_N', 'Right_Force_N'
+        'Phase', 'Total_Force_N', 'Left_Force_N', 'Right_Force_N',
+        'Pitch_deg', 'Roll_deg', 'Yaw_deg'
     ];
 
     const rows = data.map(pt => [
@@ -460,7 +461,10 @@ export async function autoExportCSV(data, timestamp = Date.now(), directoryHandl
         pt.phase || 'unknown',
         toNewtons(pt.actual || 0),
         toNewtons(pt.leftForce || 0),
-        toNewtons(pt.rightForce || 0)
+        toNewtons(pt.rightForce || 0),
+        pt.pitch != null ? pt.pitch.toFixed(2) : '',
+        pt.roll != null ? pt.roll.toFixed(2) : '',
+        pt.yaw != null ? pt.yaw.toFixed(2) : ''
     ].join(','));
 
     const csv = [headers.join(','), ...rows].join('\n');

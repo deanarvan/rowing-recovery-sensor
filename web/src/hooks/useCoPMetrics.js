@@ -19,23 +19,49 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 const ROLLING_WINDOW_MS = 10_000; // 10 seconds live window
 const TRAIL_WINDOW_MS = 3_000;     // 3 seconds visible trail
-const MIN_TOTAL_FOR_VALID = 20;    // ignore samples below this total force (user off board)
+// Validity gate is on the RAW ADC sum (all six channels), NOT the ×0.005-scaled,
+// integer-rounded force. Rationale: standing only swings the scaled total to ~6, so
+// the old gate of 20 left 0% of samples valid; and the rounded single-digit ints
+// destroy CoP resolution. The raw sum is ~1100 standing / exactly 0 on an empty board,
+// giving ~200× more resolution and a clean active/inactive separation. Tune here.
+export const MIN_RAW_TOTAL_FOR_VALID = 300; // raw counts: empty=0, single-leg~520, two-leg~1100
+
+// Sum of the raw (unscaled) per-channel ADC values exposed by useForceData (leftRaw/rightRaw).
+export function rawStanceTotal(data) {
+    if (!data) return 0;
+    const l = data.leftRaw || {};
+    const r = data.rightRaw || {};
+    return (l.heel || 0) + (l.ball || 0) + (l.toe || 0)
+         + (r.heel || 0) + (r.ball || 0) + (r.toe || 0);
+}
+
+// True when there's enough weight on the board to trust the CoP. Shared so every
+// balance view can gate identically (replaces the duplicated `total < 20` literals).
+export function isActiveStance(data) {
+    return rawStanceTotal(data) >= MIN_RAW_TOTAL_FOR_VALID;
+}
 
 function computeCoP(data) {
-    const { leftForce, rightForce, leftRaw, rightRaw } = data;
-    const total = leftForce + rightForce;
-    if (total < MIN_TOTAL_FOR_VALID) return null;
+    if (!data) return null;
+    const l = data.leftRaw || {};
+    const r = data.rightRaw || {};
+    const rawLeft = (l.heel || 0) + (l.ball || 0) + (l.toe || 0);
+    const rawRight = (r.heel || 0) + (r.ball || 0) + (r.toe || 0);
+    const total = rawLeft + rawRight;
+    if (total < MIN_RAW_TOTAL_FOR_VALID) return null;
 
-    // X: -100 (all left) to +100 (all right)
-    const x = ((rightForce - leftForce) / total) * 100;
-    // Y: -100 (all heel) to +100 (all toe)
-    const frontTotal = (leftRaw.ball || 0) + (leftRaw.toe || 0) + (rightRaw.ball || 0) + (rightRaw.toe || 0);
-    const heelTotal = (leftRaw.heel || 0) + (rightRaw.heel || 0);
+    // X: -100 (all left) to +100 (all right) — from raw sums, for full resolution.
+    const x = ((rawRight - rawLeft) / total) * 100;
+    // Y: -100 (all heel) to +100 (all toe). NOTE: this stays heel-pinned (~-100) until
+    // the toe channels actually register load — that's a hardware/load-path issue,
+    // not this math. Ellipse area will read ~0 (degenerate 1-D) while toes are dead.
+    const frontTotal = (l.ball || 0) + (l.toe || 0) + (r.ball || 0) + (r.toe || 0);
+    const heelTotal = (l.heel || 0) + (r.heel || 0);
     const apTotal = frontTotal + heelTotal;
     const y = apTotal > 0 ? ((frontTotal - heelTotal) / apTotal) * 100 : 0;
 
-    const leftPct = (leftForce / total) * 100;
-    const rightPct = (rightForce / total) * 100;
+    const leftPct = (rawLeft / total) * 100;
+    const rightPct = (rawRight / total) * 100;
 
     return {
         x: Math.max(-100, Math.min(100, x)),
